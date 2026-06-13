@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+
+.probe-output/
+.research-home/
+.research-venv/
+__pycache__/
+*.pyc
+
