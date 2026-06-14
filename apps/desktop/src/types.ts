@@ -4,7 +4,16 @@ export type SourceKind =
   | "cursor"
   | "gemini_cli"
   | "github_copilot"
-  | "openai_api_cost";
+  | "openai_api_cost"
+  | "claude_api_cost"
+  | "gemini_api_cost"
+  | "deepseek_api_cost";
+
+export type ApiCostSourceKind =
+  | "openai_api_cost"
+  | "claude_api_cost"
+  | "gemini_api_cost"
+  | "deepseek_api_cost";
 
 export type SourceStatus =
   | "ready"
@@ -36,6 +45,7 @@ export type UsageSummary = {
   totals: TokenTotals;
   by_source: Record<SourceKind, TokenTotals>;
   by_day: Record<string, TokenTotals>;
+  by_day_source: Record<string, Record<SourceKind, TokenTotals>>;
   rolling_7d: {
     window_start: string | null;
     window_end: string | null;
@@ -78,7 +88,7 @@ export type MockSummaryPayload = {
 };
 
 export type RefreshResult = {
-  source_kind: Exclude<SourceKind, "openai_api_cost">;
+  source_kind: Exclude<SourceKind, ApiCostSourceKind>;
   source_id: string;
   status: SourceStatus;
   confidence: SourceConfidence;
@@ -87,8 +97,9 @@ export type RefreshResult = {
   message?: string;
 };
 
-export type RefreshUsageSummary = Omit<UsageSummary, "by_source"> & {
+export type RefreshUsageSummary = Omit<UsageSummary, "by_source" | "by_day_source"> & {
   by_source: Partial<Record<SourceKind, TokenTotals>>;
+  by_day_source?: Record<string, Partial<Record<SourceKind, TokenTotals>>>;
 };
 
 export type RefreshStorageSummaryPayload = Omit<MockSummaryPayload, "summary"> & {

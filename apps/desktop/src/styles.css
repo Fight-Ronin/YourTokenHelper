@@ -173,9 +173,11 @@ h1 {
 
 .metric-tile {
   min-height: 112px;
+  min-width: 0;
   padding: 14px;
   display: grid;
   align-content: space-between;
+  overflow: hidden;
 }
 
 .metric-tile.primary {
@@ -191,12 +193,20 @@ h1 {
   color: #6b7280;
   font-size: 12px;
   font-weight: 500;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .metric-tile strong {
+  min-width: 0;
   font-size: 28px;
   line-height: 1.05;
   font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.metric-tile strong.compact-value {
+  font-size: 22px;
 }
 
 .main-grid {
@@ -417,7 +427,7 @@ h1 {
 
 .manual-refresh-mock {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(7, minmax(0, 1fr)) auto auto;
   align-items: center;
   gap: 12px;
 }
@@ -434,6 +444,38 @@ h1 {
   color: #15171a;
   font-size: 13px;
   font-weight: 600;
+}
+
+.root-save-row {
+  min-height: 46px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.root-save-row .manual-refresh-row {
+  margin-right: auto;
+}
+
+.toggle-control {
+  min-height: 34px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #374151;
+  font-size: 13px;
+}
+
+.toggle-control:has(input:disabled) {
+  color: #6b7280;
+  background: #f9fafb;
 }
 
 .source-name {

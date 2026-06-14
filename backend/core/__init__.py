@@ -4,6 +4,7 @@ from backend.core.aggregation import RollingWindowSummary, UsageSummary, aggrega
 from backend.core.models import (
     ALLOWANCE_STATUSES,
     ALLOWANCE_UNITS,
+    API_COST_SOURCE_KINDS,
     CONFIDENCE_VALUES,
     SOURCE_KINDS,
     AllowanceWindow,
@@ -18,6 +19,7 @@ __all__ = [
     "CONFIDENCE_VALUES",
     "ALLOWANCE_STATUSES",
     "ALLOWANCE_UNITS",
+    "API_COST_SOURCE_KINDS",
     "SOURCE_KINDS",
     "AllowanceWindow",
     "ContractError",

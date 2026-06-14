@@ -43,10 +43,11 @@ def test_pr2_contract_doc_mentions_backend_source_kinds_and_mock_fixture():
     assert "openai_api`" not in text
 
 
-def test_source_strategy_uses_backend_openai_api_cost_source_kind():
+def test_source_strategy_uses_backend_source_kinds():
     text = SOURCE_STRATEGY_DOC.read_text(encoding="utf-8")
 
-    assert "openai_api_cost" in text
+    for source_kind in SOURCE_KINDS:
+        assert source_kind in text
     assert "openai_api`" not in text
 
 
@@ -241,6 +242,9 @@ def test_desktop_command_contract_matches_primary_refresh_request_shape():
     assert "buildDashboardSummaryFromRefresh" in dashboard_text
     assert "buildDashboardSummaryFromRefresh" in dashboard_test_text
     assert "openai_api_cost" in dashboard_text
+    assert "claude_api_cost" in dashboard_text
+    assert "gemini_api_cost" in dashboard_text
+    assert "deepseek_api_cost" in dashboard_text
     assert 'status: "secondary_source"' in dashboard_text
     assert 'confidence: "unavailable"' in dashboard_text
     assert "OpenAI API cost should stay secondary" in dashboard_test_text
@@ -272,7 +276,7 @@ def test_desktop_command_contract_matches_primary_refresh_request_shape():
     assert "unavailable states" in readme_text
     assert "Saved Aggregate" in readme_text
     assert "checking, loaded, or unavailable" in readme_text
-    assert "manual-only" in readme_text
+    assert "manual-or-auto" in readme_text
     assert "hidden-root readiness gate" in readme_text
     assert "empty-root default" in readme_text
     assert "buildExplicitRootSetupRows" in readme_text
@@ -426,6 +430,7 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     dashboard_summary_test_text = DESKTOP_DASHBOARD_SUMMARY_TEST.read_text(encoding="utf-8")
     setup_text = DESKTOP_SOURCE_SETUP_MOCK.read_text(encoding="utf-8")
     readme_text = DESKTOP_README.read_text(encoding="utf-8")
+    pr5_text = Path("docs/pr-5-local-source-sync.md").read_text(encoding="utf-8")
 
     assert "Mock data" in dashboard_summary_text
     assert "Live local aggregate" in dashboard_summary_text
@@ -438,7 +443,7 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "startupStorageStatusLabel" in dashboard_summary_text
     assert "startupStorageStatusLabel({ phase: \"loading\" })" in dashboard_summary_test_text
     assert "Mock fallback" in app_text
-    assert "Manual only" in app_text
+    assert "Manual or auto" in app_text
     assert "dashboardQualityLabel" in app_text
     assert "dashboardQualityLabel" in dashboard_summary_text
     assert "dashboardQualityLabel(\"local_refresh\", { phase: \"loading\" })" in dashboard_summary_test_text
@@ -447,7 +452,7 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "setDashboardDataMode" in app_text
     assert "setLastRefreshResults" in app_text
     assert "setStartupStorageReadState" in app_text
-    assert "onRefreshSummary(outcome.result)" in app_text
+    assert "handleRefreshSummary(outcome.result)" in app_text
     assert "secondary source not connected" in app_text
     assert "ManualRefreshMock" in app_text
     assert "manualRefreshBridgeLabel" in app_text
@@ -526,6 +531,16 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "manualRefreshStatusLabel" in setup_text
     assert "manualRefreshSuccessMessage" in app_text
     assert "manualRefreshSuccessMessage" in setup_text
+    assert "loadSourceRootPreferences" in app_text
+    assert "saveSourceRootPreferences" in app_text
+    assert "clearSourceRootPreferences" in app_text
+    assert "sourceRootStorageLabel" in app_text
+    assert "shouldRunAutoRefresh" in app_text
+    assert "setInterval" in app_text
+    assert "Save roots" in app_text
+    assert "Forget" in app_text
+    assert "Saved locally" in Path("apps/desktop/src/commands/sourceRootPreferences.ts").read_text(encoding="utf-8")
+    assert "Needs saved roots" in Path("apps/desktop/src/commands/sourceRootPreferences.ts").read_text(encoding="utf-8")
     assert "ManualRefreshRunState" in setup_text
     assert "manualRefreshStatusLabel(true, { phase: \"running\" })" in DESKTOP_SOURCE_SETUP_MOCK_TEST.read_text(encoding="utf-8")
     assert "Updated 7,570 aggregate tokens" in DESKTOP_SOURCE_SETUP_MOCK_TEST.read_text(encoding="utf-8")
@@ -545,7 +560,7 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert 'picker: "claude_code"' in setup_text
     assert "Selected (mock)" in setup_text
     assert "Selected, path hidden" in setup_text
-    assert "Label only, no path stored" in setup_text
+    assert "Hidden root selected" in setup_text
     assert 'rootReadiness: "label_only"' in setup_text
     assert "selected_explicit_root" in setup_text
     assert "Not selected" in setup_text
@@ -557,7 +572,7 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert 'pathPolicy: "no_path_stored"' in setup_text
     assert 'pathPolicy: "no_local_parser"' in setup_text
     assert 'pathPolicy: "official_report_only"' in setup_text
-    assert "No path stored" in setup_text
+    assert "Path hidden" in setup_text
     assert "No local parser" in setup_text
     assert "Official report" in setup_text
     assert "Needs explicit root" in setup_text
@@ -573,13 +588,20 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "onClearRoot(row.sourceKind)" in app_text
     assert "Status only" in setup_text
     assert "Official report" in setup_text
-    assert "Sync is disabled in mock mode" in app_text
-    assert "Live sync is not wired in mock mode" in app_text
-    assert '<button className="sync-button" disabled type="button">' in app_text
+    assert "headerRefreshButtonLabel" in app_text
+    assert "headerRefreshButtonTitle" in app_text
+    assert "canRunHeaderRefresh" in app_text
+    assert "handleHeaderRefresh" in app_text
+    assert "disabled={!headerCanRefresh}" in app_text
+    assert "onClick={handleHeaderRefresh}" in app_text
+    assert "Refresh local aggregate" in app_text
+    assert "Save roots before using header refresh" in Path("apps/desktop/src/commands/sourceRootPreferences.ts").read_text(encoding="utf-8")
     assert "showOpenDialog" not in app_text
     assert "invoke(" not in app_text
     assert "@tauri-apps/api" not in app_text
-    assert "Header sync and setup affordances are disabled" in readme_text
+    assert "The header `Refresh` button is a shortcut" in readme_text
+    assert "requires saved roots" in readme_text
+    assert "| Header refresh shortcut | Gated UI |" in pr5_text
     assert "refresh action disabled" in readme_text
     assert "production command client" in readme_text
     assert "names `refresh_sources_manual`" in readme_text
@@ -616,7 +638,10 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "Selected (mock)" in readme_text
     assert "visible `displayValue` is a safe label" in readme_text
     assert "`Selected, path hidden` or `No root selected`" in readme_text
-    assert "neither state stores or displays" in readme_text
+    assert "neither state displays" in readme_text
+    assert "Save roots" in readme_text
+    assert "Forget" in readme_text
+    assert "Auto refresh stays disabled until both roots are ready and saved" in readme_text
     assert "masked manual inputs" in PR5_DOC.read_text(encoding="utf-8")
     assert "browser autocomplete and spellcheck stay disabled" in PR5_DOC.read_text(encoding="utf-8")
     assert "no OS picker opens" in PR5_DOC.read_text(encoding="utf-8")
@@ -633,7 +658,18 @@ def test_tauri_registers_static_sample_and_gated_manual_refresh_command():
     assert 'SOURCE_REFRESH_SUMMARY_SAMPLE_COMMAND: &str = "source_refresh_summary_sample"' in rust_text
     assert f'REFRESH_SOURCES_MANUAL_COMMAND: &str = "{PRIMARY_REFRESH_COMMAND_NAME}"' in rust_text
     assert f'LOAD_STORAGE_SUMMARY_COMMAND: &str = "{LOAD_STORAGE_SUMMARY_COMMAND_NAME}"' in rust_text
+    assert 'LOAD_SAVED_SOURCE_ROOTS_COMMAND: &str = "load_saved_source_roots"' in rust_text
+    assert 'SAVE_SOURCE_ROOTS_COMMAND: &str = "save_source_roots"' in rust_text
+    assert 'CLEAR_SAVED_SOURCE_ROOTS_COMMAND: &str = "clear_saved_source_roots"' in rust_text
+    assert 'SOURCE_ROOTS_FILE_NAME: &str = "source-roots.json"' in rust_text
+    assert "DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES" in rust_text
     assert "pub struct RefreshSourcesManualArgs" in rust_text
+    assert "pub struct SavedSourceRoots" in rust_text
+    assert "normalize_saved_source_roots" in rust_text
+    assert "load_saved_source_roots_from_path" in rust_text
+    assert "save_source_roots_to_path" in rust_text
+    assert "clear_saved_source_roots_at_path" in rust_text
+    assert "source_roots_path_from_app_data_dir" in rust_text
     assert 'BACKEND_REFRESH_COMMAND_MODULE: &str = "backend.sources.refresh_command_cli"' in rust_text
     assert 'BACKEND_LOAD_STORAGE_SUMMARY_COMMAND_MODULE: &str =' in rust_text
     assert '"backend.storage.summary_command_cli"' in rust_text
@@ -680,6 +716,10 @@ def test_tauri_registers_static_sample_and_gated_manual_refresh_command():
     assert "load_storage_summary_backend_process_missing_database_is_unavailable" in rust_text
     assert "load_storage_summary_command_reads_file_backed_refresh_database" in rust_text
     assert "refresh_database_path_prefers_env_override_before_app_data_default" in rust_text
+    assert "source_roots_path_uses_app_data_config_file" in rust_text
+    assert "saved_source_roots_normalize_roots_and_auto_refresh_gate" in rust_text
+    assert "saved_source_roots_file_round_trips_without_path_echo_errors" in rust_text
+    assert "saved_source_roots_invalid_file_returns_redacted_error" in rust_text
     assert "refresh_sources_manual_backend_process_returns_redacted_error" in rust_text
     assert "gated_refresh_sources_manual_backend_process_requires_codex_root" in rust_text
     assert "gated_refresh_sources_manual_backend_process_rejects_before_database_setup" in rust_text
@@ -719,6 +759,9 @@ def test_tauri_registers_static_sample_and_gated_manual_refresh_command():
     assert "source_refresh_summary_sample" in registered_commands
     assert PRIMARY_REFRESH_COMMAND_NAME in registered_commands
     assert LOAD_STORAGE_SUMMARY_COMMAND_NAME in registered_commands
+    assert "load_saved_source_roots" in registered_commands
+    assert "save_source_roots" in registered_commands
+    assert "clear_saved_source_roots" in registered_commands
     assert "REFRESH_SOURCES_MANUAL_COMMAND" not in registered_commands
     assert "LOAD_STORAGE_SUMMARY_COMMAND" not in registered_commands
     assert "registers the production `refresh_sources_manual` command" in readme_text
@@ -738,6 +781,7 @@ def test_tauri_registers_static_sample_and_gated_manual_refresh_command():
     assert "RefreshSourcesManualResult" in readme_text
     assert "structured `invalid_refresh_request` errors" in readme_text
     assert "read-only `load_storage_summary` command" in readme_text
+    assert "`load_saved_source_roots`, `save_source_roots`, and" in readme_text
     assert "returns only the aggregate storage" in readme_text
     assert "showing fake zero usage" in readme_text
     assert "unknown fields denied" in readme_text
@@ -756,4 +800,6 @@ def test_tauri_registers_static_sample_and_gated_manual_refresh_command():
     assert "React invokes the registered manual refresh command" in pr5_text
     assert "registered `refresh_sources_manual` command" in pr5_text
     assert "registers `load_storage_summary` as read-only aggregate readback" in pr5_flat
+    assert "Explicit-root config commands" in pr5_text
+    assert "`load_saved_source_roots`, `save_source_roots`, and" in pr5_text
     assert "Persisted summary readback command" in pr5_text

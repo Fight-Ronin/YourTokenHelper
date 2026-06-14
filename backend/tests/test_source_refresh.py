@@ -135,6 +135,36 @@ def test_refresh_sources_summary_payload_combines_refresh_results_and_summary():
     ]
 
 
+def test_refresh_sources_summary_payload_replaces_current_window_instead_of_accumulating():
+    connection = memory_connection()
+    adapters = build_primary_source_adapters(
+        [
+            JsonlSourceCandidate("codex", FIXTURE_ROOT / "codex"),
+            JsonlSourceCandidate("claude_code", FIXTURE_ROOT / "claude_code"),
+        ]
+    )
+
+    first = refresh_sources_summary_payload(
+        connection,
+        adapters,
+        end_day_utc="2026-06-14",
+        started_at="2026-06-14T00:00:00Z",
+    )
+    second = refresh_sources_summary_payload(
+        connection,
+        adapters,
+        end_day_utc="2026-06-14",
+        started_at="2026-06-14T00:01:00Z",
+    )
+    summary = query_daily_summary(connection, "2026-06-14")
+
+    assert first["storage_summary"]["summary"]["totals"]["total_tokens"] == 7570
+    assert second["storage_summary"]["summary"]["totals"]["total_tokens"] == 7570
+    assert summary.event_count == 4
+    assert summary.totals.total_tokens == 7570
+    assert sync_run_count(connection) == 10
+
+
 def test_refresh_sources_summary_payload_without_roots_keeps_summary_empty():
     connection = memory_connection()
 

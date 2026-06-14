@@ -67,8 +67,10 @@ def test_fixture_seed_queries_daily_and_rolling_weekly_summaries():
     assert daily.totals.total_tokens == 60140
     assert daily.by_source["codex"].total_tokens == 2540
     assert daily.by_day["2026-06-14"].total_tokens == 60140
+    assert daily.by_day_source["2026-06-14"]["codex"].total_tokens == 2540
     assert weekly.event_count == 6
     assert weekly.totals.total_tokens == 60140
+    assert weekly.by_day_source["2026-06-14"]["codex"].total_tokens == 2540
     assert weekly.rolling_7d.window_start == "2026-06-08"
     assert weekly.rolling_7d.window_end == "2026-06-14"
     assert "2026-06-07" not in weekly.by_day

@@ -17,6 +17,9 @@ V1 is a Daily and Weekly personal coding-tool usage viewer.
 - Usage consumed, remaining available usage, and refresh/reset timing are the primary product signals.
 - Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot are the primary source targets.
 - API-key dollar cost is a supported secondary source, not the primary product signal.
+- API-key dollar cost should remain secondary across providers; OpenAI can be
+  first, with Claude, Gemini, and DeepSeek handled through the same provider
+  status model after their official billing/export paths are verified.
 - Monthly is a lower-priority follow-up, not a first-class V1 view.
 - Local personal usage is the default path; official API sync is an enhancement when available.
 - Personal/no-admin users are the default target.
@@ -309,6 +312,9 @@ Connect the real OpenAI Admin Usage API and secondary cost paths to local aggreg
 - Record sync runs.
 - Surface source health in the Sources view.
 - Back Daily and Weekly views with synced local data.
+- Reserve provider-status slots for Claude, Gemini, and DeepSeek API cost
+  sources, but do not mark them connected until an official billing API or
+  export shape has deterministic fixture coverage.
 
 ### Verification
 
@@ -331,6 +337,8 @@ Connect the real OpenAI Admin Usage API and secondary cost paths to local aggreg
 - Secure storage behavior across Windows, macOS, and Linux.
 - Rate-limit behavior and retry policy.
 - How to present API key IDs if names are unavailable.
+- How each non-OpenAI provider exposes usage, price, project/key grouping, and
+  permission errors without requiring screen scraping.
 
 ## PR 7: Trust, Export, And Packaging Check
 

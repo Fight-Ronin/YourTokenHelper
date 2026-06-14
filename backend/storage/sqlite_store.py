@@ -183,6 +183,41 @@ def record_usage_events(connection: sqlite3.Connection, events: Iterable[UsageEv
             _record_usage_event(connection, event)
 
 
+def replace_usage_events_for_source_window(
+    connection: sqlite3.Connection,
+    *,
+    source_kind: str,
+    source_id: str,
+    start_day_utc: str,
+    end_day_utc: str,
+    events: Iterable[UsageEvent],
+) -> None:
+    _validate_source(source_kind, source_id, "manual")
+    start_day, end_day = _validate_day_range(start_day_utc, end_day_utc)
+    event_list = list(events)
+    for event in event_list:
+        if event.source_kind != source_kind or event.source_id != source_id:
+            raise ContractError("replacement events must match the source")
+
+    with connection:
+        connection.execute(
+            """
+            DELETE FROM usage_buckets
+            WHERE source_kind = ? AND source_id = ? AND day_utc BETWEEN ? AND ?
+            """,
+            (source_kind, source_id, start_day, end_day),
+        )
+        connection.execute(
+            """
+            DELETE FROM cost_buckets
+            WHERE source_kind = ? AND source_id = ? AND day_utc BETWEEN ? AND ?
+            """,
+            (source_kind, source_id, start_day, end_day),
+        )
+        for event in event_list:
+            _record_usage_event(connection, event)
+
+
 def replace_allowance_windows(
     connection: sqlite3.Connection,
     windows: Iterable[AllowanceWindow],
@@ -507,6 +542,7 @@ def _query_usage_summary(
     totals = TokenTotals()
     by_source: dict[str, TokenTotals] = {}
     by_day: dict[str, TokenTotals] = {}
+    by_day_source: dict[str, dict[str, TokenTotals]] = {}
     for row in rows:
         row_totals = _totals_from_row(row)
         event_count += int(row["event_count"])
@@ -519,12 +555,18 @@ def _query_usage_summary(
             by_day.get(row["day_utc"], TokenTotals()),
             row_totals,
         )
+        day_sources = by_day_source.setdefault(row["day_utc"], {})
+        day_sources[row["source_kind"]] = add_totals(
+            day_sources.get(row["source_kind"], TokenTotals()),
+            row_totals,
+        )
 
     return UsageSummary(
         event_count=event_count,
         totals=totals,
         by_source=by_source,
         by_day=by_day,
+        by_day_source=by_day_source,
         rolling_7d=RollingWindowSummary(
             window_start=start_day if event_count else None,
             window_end=end_day if event_count else None,

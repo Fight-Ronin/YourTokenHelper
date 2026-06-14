@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    env,
-    fs,
-    io::Write,
+    env, fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -12,11 +11,15 @@ use tauri::Manager;
 pub const SOURCE_REFRESH_SUMMARY_SAMPLE_COMMAND: &str = "source_refresh_summary_sample";
 pub const REFRESH_SOURCES_MANUAL_COMMAND: &str = "refresh_sources_manual";
 pub const LOAD_STORAGE_SUMMARY_COMMAND: &str = "load_storage_summary";
+pub const LOAD_SAVED_SOURCE_ROOTS_COMMAND: &str = "load_saved_source_roots";
+pub const SAVE_SOURCE_ROOTS_COMMAND: &str = "save_source_roots";
+pub const CLEAR_SAVED_SOURCE_ROOTS_COMMAND: &str = "clear_saved_source_roots";
 pub const BACKEND_REFRESH_COMMAND_MODULE: &str = "backend.sources.refresh_command_cli";
-pub const BACKEND_LOAD_STORAGE_SUMMARY_COMMAND_MODULE: &str =
-    "backend.storage.summary_command_cli";
+pub const BACKEND_LOAD_STORAGE_SUMMARY_COMMAND_MODULE: &str = "backend.storage.summary_command_cli";
 pub const REFRESH_DATABASE_PATH_ENV_VAR: &str = "YTH_REFRESH_DATABASE_PATH";
 pub const REFRESH_DATABASE_FILE_NAME: &str = "usage.sqlite";
+pub const SOURCE_ROOTS_FILE_NAME: &str = "source-roots.json";
+pub const DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES: u16 = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +46,19 @@ pub struct LoadStorageSummaryArgs {
     pub end_day_utc: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedSourceRoots {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_jsonl_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claude_code_jsonl_root: Option<String>,
+    #[serde(default)]
+    pub auto_refresh_enabled: bool,
+    #[serde(default = "default_auto_refresh_interval_minutes")]
+    pub auto_refresh_interval_minutes: u16,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LoadStorageSummaryResult {
@@ -61,6 +77,17 @@ pub struct RefreshCommandError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
+}
+
+impl Default for SavedSourceRoots {
+    fn default() -> Self {
+        Self {
+            codex_jsonl_root: None,
+            claude_code_jsonl_root: None,
+            auto_refresh_enabled: false,
+            auto_refresh_interval_minutes: DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES,
+        }
+    }
 }
 
 const SOURCE_REFRESH_SUMMARY_SAMPLE: &str = include_str!("../source-refresh-summary.sample.json");
@@ -106,6 +133,72 @@ pub fn load_storage_summary_result_from_stdout(
     stdout: &str,
 ) -> Result<LoadStorageSummaryResult, serde_json::Error> {
     serde_json::from_str(stdout)
+}
+
+pub fn normalize_saved_source_roots(args: SavedSourceRoots) -> SavedSourceRoots {
+    let codex_jsonl_root = normalize_optional_root(args.codex_jsonl_root);
+    let claude_code_jsonl_root = normalize_optional_root(args.claude_code_jsonl_root);
+    let has_both_roots = codex_jsonl_root.is_some() && claude_code_jsonl_root.is_some();
+
+    SavedSourceRoots {
+        codex_jsonl_root,
+        claude_code_jsonl_root,
+        auto_refresh_enabled: args.auto_refresh_enabled && has_both_roots,
+        auto_refresh_interval_minutes: normalize_auto_refresh_interval_minutes(
+            args.auto_refresh_interval_minutes,
+        ),
+    }
+}
+
+pub fn load_saved_source_roots_from_path(path: &Path) -> Result<SavedSourceRoots, String> {
+    if !path.exists() {
+        return Ok(SavedSourceRoots::default());
+    }
+
+    let text =
+        fs::read_to_string(path).map_err(|_| "saved source roots could not be read".to_string())?;
+    let saved = serde_json::from_str::<SavedSourceRoots>(&text)
+        .map_err(|_| "saved source roots were invalid".to_string())?;
+    Ok(normalize_saved_source_roots(saved))
+}
+
+pub fn save_source_roots_to_path(
+    path: &Path,
+    args: &SavedSourceRoots,
+) -> Result<SavedSourceRoots, String> {
+    let saved = normalize_saved_source_roots(args.clone());
+    if let Some(parent) = refresh_database_parent_dir(path) {
+        fs::create_dir_all(parent)
+            .map_err(|_| "failed to prepare source roots directory".to_string())?;
+    }
+    let text = serde_json::to_string(&saved)
+        .map_err(|_| "failed to serialize source roots".to_string())?;
+    fs::write(path, text).map_err(|_| "failed to save source roots".to_string())?;
+    Ok(saved)
+}
+
+pub fn clear_saved_source_roots_at_path(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("failed to clear source roots".to_string()),
+    }
+}
+
+fn normalize_optional_root(root: Option<String>) -> Option<String> {
+    root.map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn normalize_auto_refresh_interval_minutes(minutes: u16) -> u16 {
+    if minutes < 5 {
+        return DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES;
+    }
+    minutes.min(1440)
+}
+
+fn default_auto_refresh_interval_minutes() -> u16 {
+    DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES
 }
 
 pub fn run_refresh_sources_manual_backend_process(
@@ -320,6 +413,28 @@ fn load_storage_summary_command(
     )
 }
 
+#[tauri::command]
+fn load_saved_source_roots(app: tauri::AppHandle) -> Result<SavedSourceRoots, String> {
+    let path = runtime_source_roots_path(&app)?;
+    load_saved_source_roots_from_path(&path)
+}
+
+#[tauri::command]
+fn save_source_roots(
+    app: tauri::AppHandle,
+    args: SavedSourceRoots,
+) -> Result<SavedSourceRoots, String> {
+    let path = runtime_source_roots_path(&app)?;
+    save_source_roots_to_path(&path, &args)
+}
+
+#[tauri::command]
+fn clear_saved_source_roots(app: tauri::AppHandle) -> Result<SavedSourceRoots, String> {
+    let path = runtime_source_roots_path(&app)?;
+    clear_saved_source_roots_at_path(&path)?;
+    Ok(SavedSourceRoots::default())
+}
+
 fn runtime_python_executable() -> PathBuf {
     env::var_os("YTH_PYTHON")
         .map(PathBuf::from)
@@ -354,8 +469,21 @@ fn refresh_database_path_from_app_data_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join(REFRESH_DATABASE_FILE_NAME)
 }
 
+fn runtime_source_roots_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "failed to resolve source roots directory".to_string())?;
+    Ok(source_roots_path_from_app_data_dir(&app_data_dir))
+}
+
+fn source_roots_path_from_app_data_dir(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(SOURCE_ROOTS_FILE_NAME)
+}
+
 fn refresh_database_parent_dir(path: &Path) -> Option<&Path> {
-    path.parent().filter(|parent| !parent.as_os_str().is_empty())
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
 }
 
 fn workspace_root_from_manifest() -> PathBuf {
@@ -372,7 +500,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             source_refresh_summary_sample,
             refresh_sources_manual,
-            load_storage_summary
+            load_storage_summary,
+            load_saved_source_roots,
+            save_source_roots,
+            clear_saved_source_roots
         ])
         .run(tauri::generate_context!())
         .expect("error while running YourTokenHelper");
@@ -382,26 +513,29 @@ pub fn run() {
 mod tests {
     use super::{
         backend_load_storage_summary_process_module_args, backend_refresh_process_module_args,
+        clear_saved_source_roots_at_path, load_saved_source_roots_from_path,
         load_storage_summary_command, load_storage_summary_result_from_stdout,
-        load_storage_summary_stdin, refresh_database_path_from_app_data_dir,
-        refresh_database_path_from_env_or_app_data_dir, refresh_database_parent_dir,
+        load_storage_summary_stdin, normalize_saved_source_roots, refresh_database_parent_dir,
+        refresh_database_path_from_app_data_dir, refresh_database_path_from_env_or_app_data_dir,
         refresh_sources_manual_command, refresh_sources_manual_result_from_stdout,
         refresh_sources_manual_stdin, run_gated_refresh_sources_manual_backend_process,
         run_gated_refresh_sources_manual_backend_process_with_database_path,
         run_load_storage_summary_backend_process_with_database_path,
         run_refresh_sources_manual_backend_process,
-        run_refresh_sources_manual_backend_process_with_database_path,
+        run_refresh_sources_manual_backend_process_with_database_path, save_source_roots_to_path,
         source_refresh_error_sample_payload, source_refresh_summary_sample_payload,
-        workspace_root_from_manifest, LoadStorageSummaryArgs, LoadStorageSummaryResult,
-        RefreshSourcesManualArgs, RefreshSourcesManualResult,
-        BACKEND_LOAD_STORAGE_SUMMARY_COMMAND_MODULE, BACKEND_REFRESH_COMMAND_MODULE,
+        source_roots_path_from_app_data_dir, workspace_root_from_manifest, LoadStorageSummaryArgs,
+        LoadStorageSummaryResult, RefreshSourcesManualArgs, RefreshSourcesManualResult,
+        SavedSourceRoots, BACKEND_LOAD_STORAGE_SUMMARY_COMMAND_MODULE,
+        BACKEND_REFRESH_COMMAND_MODULE, CLEAR_SAVED_SOURCE_ROOTS_COMMAND,
+        DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES, LOAD_SAVED_SOURCE_ROOTS_COMMAND,
         LOAD_STORAGE_SUMMARY_COMMAND, REFRESH_DATABASE_FILE_NAME, REFRESH_DATABASE_PATH_ENV_VAR,
-        REFRESH_SOURCES_MANUAL_COMMAND, SOURCE_REFRESH_SUMMARY_SAMPLE_COMMAND,
+        REFRESH_SOURCES_MANUAL_COMMAND, SAVE_SOURCE_ROOTS_COMMAND,
+        SOURCE_REFRESH_SUMMARY_SAMPLE_COMMAND, SOURCE_ROOTS_FILE_NAME,
     };
     use serde_json::json;
     use std::{
-        env,
-        fs,
+        env, fs,
         path::{Path, PathBuf},
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -415,6 +549,9 @@ mod tests {
         );
         assert_eq!(REFRESH_SOURCES_MANUAL_COMMAND, "refresh_sources_manual");
         assert_eq!(LOAD_STORAGE_SUMMARY_COMMAND, "load_storage_summary");
+        assert_eq!(LOAD_SAVED_SOURCE_ROOTS_COMMAND, "load_saved_source_roots");
+        assert_eq!(SAVE_SOURCE_ROOTS_COMMAND, "save_source_roots");
+        assert_eq!(CLEAR_SAVED_SOURCE_ROOTS_COMMAND, "clear_saved_source_roots");
         assert_ne!(
             REFRESH_SOURCES_MANUAL_COMMAND,
             SOURCE_REFRESH_SUMMARY_SAMPLE_COMMAND
@@ -424,6 +561,7 @@ mod tests {
             SOURCE_REFRESH_SUMMARY_SAMPLE_COMMAND
         );
         assert_ne!(LOAD_STORAGE_SUMMARY_COMMAND, REFRESH_SOURCES_MANUAL_COMMAND);
+        assert_ne!(SAVE_SOURCE_ROOTS_COMMAND, REFRESH_SOURCES_MANUAL_COMMAND);
     }
 
     #[test]
@@ -836,6 +974,92 @@ mod tests {
             refresh_database_path_from_env_or_app_data_dir(Some(env_path.clone()), &app_data_dir),
             env_path
         );
+    }
+
+    #[test]
+    fn source_roots_path_uses_app_data_config_file() {
+        let app_data_dir = PathBuf::from("synthetic-app-data-dir");
+
+        assert_eq!(
+            source_roots_path_from_app_data_dir(&app_data_dir),
+            app_data_dir.join(SOURCE_ROOTS_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn saved_source_roots_normalize_roots_and_auto_refresh_gate() {
+        let saved = normalize_saved_source_roots(SavedSourceRoots {
+            codex_jsonl_root: Some(" synthetic-codex-root ".to_string()),
+            claude_code_jsonl_root: Some(" synthetic-claude-root ".to_string()),
+            auto_refresh_enabled: true,
+            auto_refresh_interval_minutes: 1,
+        });
+
+        assert_eq!(
+            saved.codex_jsonl_root.as_deref(),
+            Some("synthetic-codex-root")
+        );
+        assert_eq!(
+            saved.claude_code_jsonl_root.as_deref(),
+            Some("synthetic-claude-root")
+        );
+        assert!(saved.auto_refresh_enabled);
+        assert_eq!(
+            saved.auto_refresh_interval_minutes,
+            DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES
+        );
+
+        let missing_claude = normalize_saved_source_roots(SavedSourceRoots {
+            codex_jsonl_root: Some("synthetic-codex-root".to_string()),
+            claude_code_jsonl_root: None,
+            auto_refresh_enabled: true,
+            auto_refresh_interval_minutes: 1441,
+        });
+
+        assert!(!missing_claude.auto_refresh_enabled);
+        assert_eq!(missing_claude.auto_refresh_interval_minutes, 1440);
+    }
+
+    #[test]
+    fn saved_source_roots_file_round_trips_without_path_echo_errors() {
+        let path = refresh_database_path_for_tests("source-roots").with_extension("json");
+        let saved = save_source_roots_to_path(
+            &path,
+            &SavedSourceRoots {
+                codex_jsonl_root: Some("synthetic-codex-root".to_string()),
+                claude_code_jsonl_root: Some("synthetic-claude-root".to_string()),
+                auto_refresh_enabled: true,
+                auto_refresh_interval_minutes: 15,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            saved.codex_jsonl_root.as_deref(),
+            Some("synthetic-codex-root")
+        );
+        assert!(path.exists());
+
+        let loaded = load_saved_source_roots_from_path(&path).unwrap();
+        assert_eq!(loaded, saved);
+
+        clear_saved_source_roots_at_path(&path).unwrap();
+        assert!(!path.exists());
+        assert_eq!(
+            load_saved_source_roots_from_path(&path).unwrap(),
+            SavedSourceRoots::default()
+        );
+    }
+
+    #[test]
+    fn saved_source_roots_invalid_file_returns_redacted_error() {
+        let path = refresh_database_path_for_tests("invalid-source-roots").with_extension("json");
+        fs::write(&path, "{\"codex_jsonl_root\":42}").unwrap();
+
+        let result = load_saved_source_roots_from_path(&path).unwrap_err();
+
+        assert_eq!(result, "saved source roots were invalid");
+        assert!(!result.contains(&path_text(&path)));
     }
 
     #[test]

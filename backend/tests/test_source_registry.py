@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.core import ContractError
+from backend.core import API_COST_SOURCE_KINDS, ContractError
 from backend.sources import (
     JsonlSourceCandidate,
     build_primary_source_adapters,
@@ -120,6 +120,7 @@ def test_primary_source_registry_without_roots_does_not_record_usage_events():
     assert source_statuses["cursor"] == "manual_only"
 
 
-def test_setup_status_adapter_rejects_unknown_source_kind():
+@pytest.mark.parametrize("source_kind", API_COST_SOURCE_KINDS)
+def test_setup_status_adapter_rejects_api_cost_source_kinds(source_kind):
     with pytest.raises(ContractError, match="Unsupported primary source"):
-        setup_status_adapter("openai_api_cost")
+        setup_status_adapter(source_kind)

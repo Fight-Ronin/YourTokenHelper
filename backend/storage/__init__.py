@@ -14,6 +14,7 @@ from backend.storage.sqlite_store import (
     record_sync_run,
     record_usage_events,
     replace_allowance_windows,
+    replace_usage_events_for_source_window,
     upsert_source,
 )
 from backend.storage.summary_payload import build_storage_summary_payload
@@ -33,5 +34,6 @@ __all__ = [
     "record_sync_run",
     "record_usage_events",
     "replace_allowance_windows",
+    "replace_usage_events_for_source_window",
     "upsert_source",
 ]

@@ -18,12 +18,30 @@ import type { LucideIcon } from "lucide-react";
 import { loadStartupStorageSummary } from "./commands/loadStorageSummaryClient.js";
 import { invokeRefreshSourcesManual } from "./commands/refreshSourcesManualClient.js";
 import { isRefreshCommandErrorPayload, manualRefreshEndDayUtc } from "./commands/sourceRefreshSummary.js";
+import {
+  clearSourceRootPreferences,
+  loadSourceRootPreferences,
+  saveSourceRootPreferences
+} from "./commands/sourceRootPreferencesClient.js";
+import {
+  autoRefreshStatusLabel,
+  canRunHeaderRefresh,
+  defaultSourceRootPreferences,
+  headerRefreshButtonLabel,
+  headerRefreshButtonTitle,
+  shouldRunAutoRefresh,
+  sourceRootStorageLabel,
+  type SourceRootPersistenceState,
+  type SourceRootPreferences
+} from "./commands/sourceRootPreferences.js";
 import mockSummary from "./data/mock-v1-summary.json";
 import {
   buildDashboardSummaryFromRefresh,
   dashboardQualityLabel,
   emptyTokenTotals,
   latestSummaryDay,
+  sourceUsageRows,
+  sourceTotalsForDay,
   startupStorageStatusLabel,
   type DashboardDataMode,
   type StartupStorageReadState
@@ -47,15 +65,17 @@ import type {
   ManualRefreshRunState
 } from "./data/source-setup.mock.js";
 import type {
+  ApiCostSourceKind,
   AllowanceWindow,
   MockSummaryPayload,
   RefreshResult,
+  RefreshStorageSummaryPayload,
   SourceKind,
   SourceRefreshSummaryPayload,
   TokenTotals
 } from "./types";
 
-const initialPayload = mockSummary as MockSummaryPayload;
+const initialPayload = buildDashboardSummaryFromRefresh(mockSummary as RefreshStorageSummaryPayload);
 
 type ViewId = "daily" | "weekly" | "sources" | "api_costs" | "settings";
 
@@ -65,7 +85,10 @@ const sourceLabels: Record<SourceKind, string> = {
   cursor: "Cursor",
   gemini_cli: "Gemini CLI",
   github_copilot: "GitHub Copilot",
-  openai_api_cost: "OpenAI API Cost"
+  openai_api_cost: "OpenAI API Cost",
+  claude_api_cost: "Claude API Cost",
+  gemini_api_cost: "Gemini API Cost",
+  deepseek_api_cost: "DeepSeek API Cost"
 };
 
 const sourceColors: Record<SourceKind, string> = {
@@ -74,8 +97,40 @@ const sourceColors: Record<SourceKind, string> = {
   cursor: "#111827",
   gemini_cli: "#2563EB",
   github_copilot: "#16A34A",
-  openai_api_cost: "#7C3AED"
+  openai_api_cost: "#7C3AED",
+  claude_api_cost: "#8B5CF6",
+  gemini_api_cost: "#4F46E5",
+  deepseek_api_cost: "#0891B2"
 };
+
+type ApiCostProvider = {
+  sourceKind: ApiCostSourceKind;
+  status: "Secondary source" | "Planned";
+  detail: string;
+};
+
+const apiCostProviders: readonly ApiCostProvider[] = [
+  {
+    sourceKind: "openai_api_cost",
+    status: "Secondary source",
+    detail: "Admin/API cost sync is reserved for PR6"
+  },
+  {
+    sourceKind: "claude_api_cost",
+    status: "Planned",
+    detail: "Provider billing export or official API required"
+  },
+  {
+    sourceKind: "gemini_api_cost",
+    status: "Planned",
+    detail: "Provider billing export or official API required"
+  },
+  {
+    sourceKind: "deepseek_api_cost",
+    status: "Planned",
+    detail: "Provider billing export or official API required"
+  }
+];
 
 const navItems: Array<{ id: ViewId; label: string; icon: LucideIcon; secondary?: boolean }> = [
   { id: "daily", label: "Daily", icon: CalendarDays },
@@ -91,7 +146,30 @@ export function App() {
   const [dashboardDataMode, setDashboardDataMode] = useState<DashboardDataMode>("mock");
   const [lastRefreshResults, setLastRefreshResults] = useState<readonly RefreshResult[] | null>(null);
   const [startupStorageReadState, setStartupStorageReadState] = useState<StartupStorageReadState>({ phase: "idle" });
+  const [sourceRootPreferences, setSourceRootPreferences] = useState<SourceRootPreferences>(
+    defaultSourceRootPreferences
+  );
+  const [sourceRootPersistenceState, setSourceRootPersistenceState] =
+    useState<SourceRootPersistenceState>({ phase: "idle" });
+  const [manualRefreshRunState, setManualRefreshRunState] = useState<ManualRefreshRunState>({ phase: "idle" });
   const view = navItems.find((item) => item.id === activeView) ?? navItems[0];
+  const manualRefreshBoundary = buildManualRefreshDraftFromHiddenRoots(
+    {
+      endDayUtc: manualRefreshEndDayUtc(),
+      ...sourceRootPreferences.rootDraft
+    },
+    { hasTauriWiring: true }
+  );
+  const rootsAreSavedForAutoRefresh =
+    sourceRootPreferences.hasSavedRoots &&
+    (sourceRootPersistenceState.phase === "loaded" || sourceRootPersistenceState.phase === "saved");
+  const headerRefreshState = {
+    canInvoke: manualRefreshBoundary.canInvoke,
+    isRunning: manualRefreshRunState.phase === "running",
+    rootsAreSaved: rootsAreSavedForAutoRefresh
+  };
+  const headerCanRefresh = canRunHeaderRefresh(headerRefreshState);
+  const headerRefreshTitle = headerRefreshButtonTitle(headerRefreshState);
 
   useEffect(() => {
     let isCancelled = false;
@@ -118,12 +196,197 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadPersistedRoots() {
+      setSourceRootPersistenceState({ phase: "loading" });
+      const outcome = await loadSourceRootPreferences();
+      if (isCancelled) {
+        return;
+      }
+      if (outcome.ok) {
+        setSourceRootPreferences(outcome.preferences);
+        setSourceRootPersistenceState(outcome.preferences.hasSavedRoots ? { phase: "loaded" } : { phase: "idle" });
+        return;
+      }
+      setSourceRootPersistenceState({ phase: "failed", message: outcome.message });
+    }
+
+    void loadPersistedRoots();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   function handleRefreshSummary(refreshSummary: SourceRefreshSummaryPayload) {
     setDashboardPayload(buildDashboardSummaryFromRefresh(refreshSummary.storage_summary));
     setDashboardDataMode("local_refresh");
     setLastRefreshResults(refreshSummary.refresh_results);
     setStartupStorageReadState({ phase: "loaded" });
   }
+
+  function updateExplicitRoot(sourceKind: ExplicitRootSourceKind, root: string) {
+    setSourceRootPreferences((preferences) => ({
+      ...preferences,
+      rootDraft: applyExplicitRootSetupAction(preferences.rootDraft, {
+        type: "select_root",
+        sourceKind,
+        root
+      }),
+      autoRefreshEnabled: false
+    }));
+    setSourceRootPersistenceState((state) =>
+      state.phase === "loaded" || state.phase === "saved" || state.phase === "dirty"
+        ? { phase: "dirty" }
+        : state
+    );
+    setManualRefreshRunState({ phase: "idle" });
+  }
+
+  function clearExplicitRoot(sourceKind: ExplicitRootSourceKind) {
+    setSourceRootPreferences((preferences) => ({
+      ...preferences,
+      rootDraft: applyExplicitRootSetupAction(preferences.rootDraft, {
+        type: "clear_root",
+        sourceKind
+      }),
+      autoRefreshEnabled: false
+    }));
+    setSourceRootPersistenceState((state) =>
+      state.phase === "loaded" || state.phase === "saved" || state.phase === "dirty"
+        ? { phase: "dirty" }
+        : state
+    );
+    setManualRefreshRunState({ phase: "idle" });
+  }
+
+  async function saveExplicitRoots() {
+    if (!manualRefreshBoundary.canInvoke) {
+      return;
+    }
+
+    const preferences: SourceRootPreferences = {
+      ...sourceRootPreferences,
+      hasSavedRoots: true,
+      autoRefreshEnabled:
+        sourceRootPreferences.autoRefreshEnabled && manualRefreshBoundary.canInvoke
+    };
+    setSourceRootPersistenceState({ phase: "saving" });
+    const outcome = await saveSourceRootPreferences(preferences);
+    if (!outcome.ok) {
+      setSourceRootPersistenceState({ phase: "failed", message: outcome.message });
+      return;
+    }
+    setSourceRootPreferences(outcome.preferences);
+    setSourceRootPersistenceState({ phase: "saved" });
+  }
+
+  async function forgetExplicitRoots() {
+    setSourceRootPersistenceState({ phase: "saving" });
+    const outcome = await clearSourceRootPreferences();
+    if (!outcome.ok) {
+      setSourceRootPersistenceState({ phase: "failed", message: outcome.message });
+      return;
+    }
+    setSourceRootPreferences(outcome.preferences);
+    setSourceRootPersistenceState({ phase: "idle" });
+    setManualRefreshRunState({ phase: "idle" });
+  }
+
+  async function setAutoRefreshEnabled(enabled: boolean) {
+    if (enabled && (!manualRefreshBoundary.canInvoke || !rootsAreSavedForAutoRefresh)) {
+      return;
+    }
+
+    const preferences: SourceRootPreferences = {
+      ...sourceRootPreferences,
+      autoRefreshEnabled: enabled
+    };
+    if (!sourceRootPreferences.hasSavedRoots) {
+      setSourceRootPreferences(preferences);
+      return;
+    }
+
+    setSourceRootPersistenceState({ phase: "saving" });
+    const outcome = await saveSourceRootPreferences(preferences);
+    if (!outcome.ok) {
+      setSourceRootPersistenceState({ phase: "failed", message: outcome.message });
+      return;
+    }
+    setSourceRootPreferences(outcome.preferences);
+    setSourceRootPersistenceState({ phase: "saved" });
+  }
+
+  async function runRefreshWithDraft(draft: NonNullable<typeof manualRefreshBoundary.draft>) {
+    setManualRefreshRunState({ phase: "running" });
+    const outcome = await invokeRefreshSourcesManual(draft);
+    if (!outcome.ok) {
+      setManualRefreshRunState({ phase: "failed", message: outcome.error.error.message });
+      return;
+    }
+    if (isRefreshCommandErrorPayload(outcome.result)) {
+      setManualRefreshRunState({ phase: "failed", message: outcome.result.error.message });
+      return;
+    }
+
+    handleRefreshSummary(outcome.result);
+    setManualRefreshRunState({
+      phase: "succeeded",
+      message: manualRefreshSuccessMessage(outcome.result.storage_summary.summary.totals.total_tokens)
+    });
+  }
+
+  async function handleManualRefresh() {
+    if (!manualRefreshBoundary.canInvoke) {
+      return;
+    }
+    await runRefreshWithDraft(manualRefreshBoundary.draft);
+  }
+
+  async function handleHeaderRefresh() {
+    if (!headerCanRefresh || !manualRefreshBoundary.canInvoke) {
+      return;
+    }
+    await runRefreshWithDraft(manualRefreshBoundary.draft);
+  }
+
+  const manualRefreshKey = manualRefreshBoundary.canInvoke
+    ? [
+        manualRefreshBoundary.draft.endDayUtc,
+        manualRefreshBoundary.draft.codexJsonlRoot,
+        manualRefreshBoundary.draft.claudeCodeJsonlRoot
+      ].join("|")
+    : "";
+
+  useEffect(() => {
+    if (
+      !shouldRunAutoRefresh({
+        preferences: sourceRootPreferences,
+        canInvoke: manualRefreshBoundary.canInvoke,
+        isRunning: manualRefreshRunState.phase === "running",
+        rootsAreSaved: rootsAreSavedForAutoRefresh
+      }) ||
+      !manualRefreshBoundary.canInvoke
+    ) {
+      return;
+    }
+
+    const draft = manualRefreshBoundary.draft;
+    const timerId = window.setInterval(() => {
+      void runRefreshWithDraft(draft);
+    }, sourceRootPreferences.autoRefreshIntervalMinutes * 60 * 1000);
+
+    return () => window.clearInterval(timerId);
+  }, [
+    manualRefreshKey,
+    manualRefreshBoundary.canInvoke,
+    manualRefreshRunState.phase,
+    rootsAreSavedForAutoRefresh,
+    sourceRootPreferences,
+    sourceRootPreferences.autoRefreshIntervalMinutes
+  ]);
 
   return (
     <div className="app-shell">
@@ -159,22 +422,15 @@ export function App() {
           <div className="header-actions">
             <span className="quality-badge">{dashboardQualityLabel(dashboardDataMode, startupStorageReadState)}</span>
             <button
-              aria-label={
-                dashboardDataMode === "mock"
-                  ? "Sync is disabled in mock mode"
-                  : "Header sync is disabled; use Sources manual refresh"
-              }
+              aria-label={headerCanRefresh ? "Refresh local aggregate" : headerRefreshTitle}
               className="sync-button"
-              disabled
-              title={
-                dashboardDataMode === "mock"
-                  ? "Live sync is not wired in mock mode"
-                  : "Use the Sources manual refresh for local aggregate updates"
-              }
+              disabled={!headerCanRefresh}
+              onClick={handleHeaderRefresh}
+              title={headerRefreshTitle}
               type="button"
             >
               <RefreshCw size={15} />
-              Sync
+              {headerRefreshButtonLabel(headerRefreshState.isRunning)}
             </button>
           </div>
         </header>
@@ -185,7 +441,17 @@ export function App() {
           dashboardDataMode,
           startupStorageReadState,
           lastRefreshResults,
-          handleRefreshSummary
+          manualRefreshBoundary,
+          manualRefreshRunState,
+          sourceRootPersistenceState,
+          sourceRootPreferences,
+          rootsAreSavedForAutoRefresh,
+          clearExplicitRoot,
+          forgetExplicitRoots,
+          handleManualRefresh,
+          saveExplicitRoots,
+          setAutoRefreshEnabled,
+          updateExplicitRoot
         )}
       </main>
     </div>
@@ -198,18 +464,40 @@ function renderView(
   dataMode: DashboardDataMode,
   startupStorageReadState: StartupStorageReadState,
   lastRefreshResults: readonly RefreshResult[] | null,
-  onRefreshSummary: (refreshSummary: SourceRefreshSummaryPayload) => void
+  manualRefreshBoundary: ReturnType<typeof buildManualRefreshDraftFromHiddenRoots>,
+  manualRefreshRunState: ManualRefreshRunState,
+  sourceRootPersistenceState: SourceRootPersistenceState,
+  sourceRootPreferences: SourceRootPreferences,
+  rootsAreSavedForAutoRefresh: boolean,
+  onClearRoot: (sourceKind: ExplicitRootSourceKind) => void,
+  onForgetRoots: () => void,
+  onManualRefresh: () => void,
+  onSaveRoots: () => void,
+  onAutoRefreshChange: (enabled: boolean) => void,
+  onRootChange: (sourceKind: ExplicitRootSourceKind, root: string) => void
 ) {
+  const configuredSourceKinds = configuredUsageSourceKinds(sourceRootPreferences);
+
   if (view === "weekly") {
-    return <WeeklyView dataMode={dataMode} payload={payload} />;
+    return <WeeklyView configuredSourceKinds={configuredSourceKinds} dataMode={dataMode} payload={payload} />;
   }
   if (view === "sources") {
     return (
       <SourcesView
         dataMode={dataMode}
         lastRefreshResults={lastRefreshResults}
-        onRefreshSummary={onRefreshSummary}
+        manualRefreshBoundary={manualRefreshBoundary}
+        manualRefreshRunState={manualRefreshRunState}
+        onAutoRefreshChange={onAutoRefreshChange}
+        onClearRoot={onClearRoot}
+        onForgetRoots={onForgetRoots}
+        onManualRefresh={onManualRefresh}
+        onRootChange={onRootChange}
+        onSaveRoots={onSaveRoots}
         payload={payload}
+        rootsAreSavedForAutoRefresh={rootsAreSavedForAutoRefresh}
+        sourceRootPersistenceState={sourceRootPersistenceState}
+        sourceRootPreferences={sourceRootPreferences}
         startupStorageReadState={startupStorageReadState}
       />
     );
@@ -220,12 +508,21 @@ function renderView(
   if (view === "settings") {
     return <SettingsView payload={payload} />;
   }
-  return <DailyView dataMode={dataMode} payload={payload} />;
+  return <DailyView configuredSourceKinds={configuredSourceKinds} dataMode={dataMode} payload={payload} />;
 }
 
-function DailyView({ dataMode, payload }: { dataMode: DashboardDataMode; payload: MockSummaryPayload }) {
+function DailyView({
+  configuredSourceKinds,
+  dataMode,
+  payload
+}: {
+  configuredSourceKinds: readonly SourceKind[];
+  dataMode: DashboardDataMode;
+  payload: MockSummaryPayload;
+}) {
   const day = latestSummaryDay(payload) ?? manualRefreshEndDayUtc();
   const daily = payload.summary.by_day[day] ?? emptyTokenTotals();
+  const dailySourceTotals = sourceTotalsForDay(payload, day);
   const remaining = firstKnownAllowance(payload, ["codex", "claude_code"]);
   const missingAllowances = payload.allowance_windows.filter((item) => item.status === "unavailable");
 
@@ -236,7 +533,11 @@ function DailyView({ dataMode, payload }: { dataMode: DashboardDataMode; payload
       <section className="main-grid">
         <div className="left-stack">
           <Panel title="Source Usage">
-            <SourceStack totals={payload.summary.by_source} overallTotal={payload.summary.totals.total_tokens} />
+            <SourceStack
+              configuredSourceKinds={configuredSourceKinds}
+              totals={dailySourceTotals}
+              overallTotal={daily.total_tokens}
+            />
           </Panel>
 
           <Panel title="Token Split">
@@ -244,7 +545,7 @@ function DailyView({ dataMode, payload }: { dataMode: DashboardDataMode; payload
           </Panel>
 
           <Panel title="Top Drivers">
-            <DriverTable payload={payload} />
+            <DriverTable payload={payload} totals={dailySourceTotals} />
           </Panel>
         </div>
 
@@ -280,7 +581,15 @@ function DailyView({ dataMode, payload }: { dataMode: DashboardDataMode; payload
   );
 }
 
-function WeeklyView({ dataMode, payload }: { dataMode: DashboardDataMode; payload: MockSummaryPayload }) {
+function WeeklyView({
+  configuredSourceKinds,
+  dataMode,
+  payload
+}: {
+  configuredSourceKinds: readonly SourceKind[];
+  dataMode: DashboardDataMode;
+  payload: MockSummaryPayload;
+}) {
   const rolling = payload.summary.rolling_7d;
   const remaining = firstKnownAllowance(payload, ["codex", "claude_code"]);
 
@@ -295,7 +604,11 @@ function WeeklyView({ dataMode, payload }: { dataMode: DashboardDataMode; payloa
           </Panel>
 
           <Panel title="Weekly Source Split">
-            <SourceStack totals={payload.summary.by_source} overallTotal={payload.summary.totals.total_tokens} />
+            <SourceStack
+              configuredSourceKinds={configuredSourceKinds}
+              totals={payload.summary.by_source}
+              overallTotal={rolling.totals.total_tokens}
+            />
           </Panel>
         </div>
 
@@ -320,66 +633,36 @@ function WeeklyView({ dataMode, payload }: { dataMode: DashboardDataMode; payloa
 function SourcesView({
   dataMode,
   lastRefreshResults,
-  onRefreshSummary,
+  manualRefreshBoundary,
+  manualRefreshRunState,
+  onAutoRefreshChange,
+  onClearRoot,
+  onForgetRoots,
+  onManualRefresh,
+  onRootChange,
+  onSaveRoots,
   payload,
+  rootsAreSavedForAutoRefresh,
+  sourceRootPersistenceState,
+  sourceRootPreferences,
   startupStorageReadState
 }: {
   dataMode: DashboardDataMode;
   lastRefreshResults: readonly RefreshResult[] | null;
-  onRefreshSummary: (refreshSummary: SourceRefreshSummaryPayload) => void;
+  manualRefreshBoundary: ReturnType<typeof buildManualRefreshDraftFromHiddenRoots>;
+  manualRefreshRunState: ManualRefreshRunState;
+  onAutoRefreshChange: (enabled: boolean) => void;
+  onClearRoot: (sourceKind: ExplicitRootSourceKind) => void;
+  onForgetRoots: () => void;
+  onManualRefresh: () => void;
+  onRootChange: (sourceKind: ExplicitRootSourceKind, root: string) => void;
+  onSaveRoots: () => void;
   payload: MockSummaryPayload;
+  rootsAreSavedForAutoRefresh: boolean;
+  sourceRootPersistenceState: SourceRootPersistenceState;
+  sourceRootPreferences: SourceRootPreferences;
   startupStorageReadState: StartupStorageReadState;
 }) {
-  const [explicitRootDraft, setExplicitRootDraft] = useState<ExplicitRootSelectionDraft>({});
-  const [manualRefreshRunState, setManualRefreshRunState] = useState<ManualRefreshRunState>({ phase: "idle" });
-  const manualRefreshBoundary = buildManualRefreshDraftFromHiddenRoots(
-    {
-      endDayUtc: manualRefreshEndDayUtc(),
-      ...explicitRootDraft
-    },
-    { hasTauriWiring: true }
-  );
-
-  function updateExplicitRoot(sourceKind: ExplicitRootSourceKind, root: string) {
-    setExplicitRootDraft((draft) => applyExplicitRootSetupAction(draft, {
-      type: "select_root",
-      sourceKind,
-      root
-    }));
-    setManualRefreshRunState({ phase: "idle" });
-  }
-
-  function clearExplicitRoot(sourceKind: ExplicitRootSourceKind) {
-    setExplicitRootDraft((draft) => applyExplicitRootSetupAction(draft, {
-      type: "clear_root",
-      sourceKind
-    }));
-    setManualRefreshRunState({ phase: "idle" });
-  }
-
-  async function handleManualRefresh() {
-    if (!manualRefreshBoundary.canInvoke) {
-      return;
-    }
-
-    setManualRefreshRunState({ phase: "running" });
-    const outcome = await invokeRefreshSourcesManual(manualRefreshBoundary.draft);
-    if (!outcome.ok) {
-      setManualRefreshRunState({ phase: "failed", message: outcome.error.error.message });
-      return;
-    }
-    if (isRefreshCommandErrorPayload(outcome.result)) {
-      setManualRefreshRunState({ phase: "failed", message: outcome.result.error.message });
-      return;
-    }
-
-    onRefreshSummary(outcome.result);
-    setManualRefreshRunState({
-      phase: "succeeded",
-      message: manualRefreshSuccessMessage(outcome.result.storage_summary.summary.totals.total_tokens)
-    });
-  }
-
   return (
     <section className="single-column">
       <Panel title="Connector Status">
@@ -415,18 +698,27 @@ function SourcesView({
 
       <Panel title="Explicit Roots">
         <ExplicitRootsMock
-          onClearRoot={clearExplicitRoot}
-          onRootChange={updateExplicitRoot}
-          rootDraft={explicitRootDraft}
+          canSaveRoots={manualRefreshBoundary.canInvoke}
+          onClearRoot={onClearRoot}
+          onForgetRoots={onForgetRoots}
+          onRootChange={onRootChange}
+          onSaveRoots={onSaveRoots}
+          rootDraft={sourceRootPreferences.rootDraft}
           rows={manualRefreshBoundary.rows}
+          sourceRootPersistenceState={sourceRootPersistenceState}
+          sourceRootPreferences={sourceRootPreferences}
         />
       </Panel>
 
       <Panel title="Manual Refresh">
         <ManualRefreshMock
+          autoRefreshEnabled={sourceRootPreferences.autoRefreshEnabled}
+          autoRefreshIntervalMinutes={sourceRootPreferences.autoRefreshIntervalMinutes}
           canInvoke={manualRefreshBoundary.canInvoke}
-          onRefresh={handleManualRefresh}
+          onAutoRefreshChange={onAutoRefreshChange}
+          onRefresh={onManualRefresh}
           readiness={manualRefreshBoundary.readiness}
+          rootsAreSavedForAutoRefresh={rootsAreSavedForAutoRefresh}
           runState={manualRefreshRunState}
         />
       </Panel>
@@ -466,7 +758,7 @@ function StartupStorageStatus({
       </div>
       <div className="manual-refresh-row">
         <span>Refresh</span>
-        <strong>Manual only</strong>
+        <strong>Manual or auto</strong>
       </div>
       {state.phase === "unavailable" ? (
         <div className="manual-refresh-row">
@@ -479,13 +771,21 @@ function StartupStorageStatus({
 }
 
 function ManualRefreshMock({
+  autoRefreshEnabled,
+  autoRefreshIntervalMinutes,
   canInvoke,
+  onAutoRefreshChange,
   onRefresh,
+  rootsAreSavedForAutoRefresh,
   runState,
   readiness
 }: {
+  autoRefreshEnabled: boolean;
+  autoRefreshIntervalMinutes: number;
   canInvoke: boolean;
+  onAutoRefreshChange: (enabled: boolean) => void;
   onRefresh: () => void;
+  rootsAreSavedForAutoRefresh: boolean;
   runState: ManualRefreshRunState;
   readiness: ManualRefreshReadiness;
 }) {
@@ -494,6 +794,15 @@ function ManualRefreshMock({
   const needsLabel = manualRefreshNeedsLabel(readiness);
   const stateLabel = manualRefreshStatusLabel(canInvoke, runState);
   const rootsLabel = manualRefreshRootsLabel(readiness);
+  const autoStatusLabel = autoRefreshStatusLabel(
+    {
+      rootDraft: {},
+      hasSavedRoots: rootsAreSavedForAutoRefresh,
+      autoRefreshEnabled,
+      autoRefreshIntervalMinutes
+    },
+    rootsAreSavedForAutoRefresh
+  );
 
   return (
     <div className="manual-refresh-mock" aria-label="Manual refresh mock state">
@@ -517,6 +826,23 @@ function ManualRefreshMock({
         <span>Bridge</span>
         <StatusBadge label={bridgeLabel} />
       </div>
+      <div className="manual-refresh-row">
+        <span>Auto</span>
+        <StatusBadge label={autoStatusLabel} />
+      </div>
+      <div className="manual-refresh-row">
+        <span>Interval</span>
+        <strong>{autoRefreshIntervalMinutes} min</strong>
+      </div>
+      <label className="toggle-control">
+        <input
+          checked={autoRefreshEnabled}
+          disabled={!canInvoke || !rootsAreSavedForAutoRefresh}
+          onChange={(event) => onAutoRefreshChange(event.currentTarget.checked)}
+          type="checkbox"
+        />
+        Auto
+      </label>
       <button
         aria-label={canInvoke ? "Run gated manual refresh" : manualRefreshMockState.disabledAriaLabel}
         className="sync-button"
@@ -574,57 +900,97 @@ function LastRefreshResults({ results }: { results: readonly RefreshResult[] | n
 }
 
 function ExplicitRootsMock({
+  canSaveRoots,
   onClearRoot,
+  onForgetRoots,
   onRootChange,
+  onSaveRoots,
   rootDraft,
-  rows
+  rows,
+  sourceRootPersistenceState,
+  sourceRootPreferences
 }: {
+  canSaveRoots: boolean;
   onClearRoot: (sourceKind: ExplicitRootSourceKind) => void;
+  onForgetRoots: () => void;
   onRootChange: (sourceKind: ExplicitRootSourceKind, root: string) => void;
+  onSaveRoots: () => void;
   rootDraft: ExplicitRootSelectionDraft;
   rows: readonly ExplicitRootMockRow[];
+  sourceRootPersistenceState: SourceRootPersistenceState;
+  sourceRootPreferences: SourceRootPreferences;
 }) {
   return (
-    <div className="setup-source-list">
-      {rows.map((row) => (
-        <div className="setup-source-row" key={row.sourceKind}>
-          <span className="source-dot" style={{ background: sourceColors[row.sourceKind] }} />
-          <div className="setup-source-meta">
-            <strong>{sourceLabels[row.sourceKind]}</strong>
-            <span>{row.detail}</span>
-            <span>{row.nextStep}</span>
-          </div>
-          <span className="setup-source-value">{row.displayValue}</span>
-          <StatusBadge label={pathPolicyLabels[row.pathPolicy]} />
-          {isExplicitRootRow(row) ? (
-            <div className="root-entry">
-              <input
-                aria-label={`${sourceLabels[row.sourceKind]} root path, hidden`}
-                autoComplete="off"
-                className="root-input"
-                onChange={(event) => onRootChange(row.sourceKind, event.currentTarget.value)}
-                placeholder="Hidden root"
-                spellCheck={false}
-                type="password"
-                value={rootDraftValue(row.sourceKind, rootDraft)}
-              />
-              <button
-                aria-label={`Clear ${sourceLabels[row.sourceKind]} hidden root`}
-                className="icon-button"
-                disabled={!rootDraftValue(row.sourceKind, rootDraft)}
-                onClick={() => onClearRoot(row.sourceKind)}
-                title="Clear hidden root"
-                type="button"
-              >
-                <X size={15} />
-              </button>
+    <>
+      <div className="setup-source-list">
+        {rows.map((row) => (
+          <div className="setup-source-row" key={row.sourceKind}>
+            <span className="source-dot" style={{ background: sourceColors[row.sourceKind] }} />
+            <div className="setup-source-meta">
+              <strong>{sourceLabels[row.sourceKind]}</strong>
+              <span>{row.detail}</span>
+              <span>{row.nextStep}</span>
             </div>
-          ) : (
-            <span className="setup-spacer" />
-          )}
+            <span className="setup-source-value">{row.displayValue}</span>
+            <StatusBadge label={pathPolicyLabels[row.pathPolicy]} />
+            {isExplicitRootRow(row) ? (
+              <div className="root-entry">
+                <input
+                  aria-label={`${sourceLabels[row.sourceKind]} root path, hidden`}
+                  autoComplete="off"
+                  className="root-input"
+                  onChange={(event) => onRootChange(row.sourceKind, event.currentTarget.value)}
+                  placeholder="Hidden root"
+                  spellCheck={false}
+                  type="password"
+                  value={rootDraftValue(row.sourceKind, rootDraft)}
+                />
+                <button
+                  aria-label={`Clear ${sourceLabels[row.sourceKind]} hidden root`}
+                  className="icon-button"
+                  disabled={!rootDraftValue(row.sourceKind, rootDraft)}
+                  onClick={() => onClearRoot(row.sourceKind)}
+                  title="Clear hidden root"
+                  type="button"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ) : (
+              <span className="setup-spacer" />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="root-save-row">
+        <div className="manual-refresh-row">
+          <span>Storage</span>
+          <StatusBadge label={sourceRootStorageLabel(sourceRootPreferences, sourceRootPersistenceState)} />
         </div>
-      ))}
-    </div>
+        <button
+          className="sync-button"
+          disabled={!canSaveRoots || sourceRootPersistenceState.phase === "saving"}
+          onClick={onSaveRoots}
+          type="button"
+        >
+          Save roots
+        </button>
+        <button
+          className="sync-button"
+          disabled={!sourceRootPreferences.hasSavedRoots && sourceRootPersistenceState.phase !== "dirty"}
+          onClick={onForgetRoots}
+          type="button"
+        >
+          Forget
+        </button>
+      </div>
+      {sourceRootPersistenceState.phase === "failed" ? (
+        <div className="manual-refresh-row">
+          <span>Save</span>
+          <strong>{sourceRootPersistenceState.message}</strong>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -646,9 +1012,31 @@ function ApiCostsView({ dataMode, payload }: { dataMode: DashboardDataMode; payl
     <section className="single-column">
       <div className="metric-strip compact" aria-label="API cost metrics">
         <MetricTile label="Cost estimate" value={costEstimateValue} unit={costEstimateUnit} tone="secondary" />
-        <MetricTile label="API tokens" value={formatTokens(costTotals.total_tokens)} unit="secondary source" />
+        <MetricTile label="Providers" value={String(apiCostProviders.length)} unit="secondary sources" />
+        <MetricTile label="Connected" value="0" unit="cost sync unavailable" />
         <MetricTile label="Cost source" value="Unavailable" unit={costWindow?.status.replace("_", " ") ?? "not connected"} />
       </div>
+
+      <Panel title="Provider Status">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Status</th>
+              <th>Next step</th>
+            </tr>
+          </thead>
+          <tbody>
+            {apiCostProviders.map((provider) => (
+              <tr key={provider.sourceKind}>
+                <td>{sourceLabels[provider.sourceKind]}</td>
+                <td><StatusBadge label={provider.status} /></td>
+                <td>{provider.detail}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
 
       <Panel title="API Cost Breakdown">
         <table className="data-table">
@@ -739,10 +1127,12 @@ function PrimaryMetricStrip({
 }
 
 function MetricTile({ label, value, unit, tone }: { label: string; value: string; unit: string; tone?: "primary" | "secondary" }) {
+  const valueClassName = isCompactMetricValue(value, tone) ? "compact-value" : "";
+
   return (
     <div className={`metric-tile ${tone ?? ""}`}>
       <span className="metric-label">{label}</span>
-      <strong>{value}</strong>
+      <strong className={valueClassName}>{value}</strong>
       <span className="metric-unit">{unit}</span>
     </div>
   );
@@ -757,14 +1147,23 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function SourceStack({ totals, overallTotal }: { totals: Record<SourceKind, TokenTotals>; overallTotal: number }) {
+function SourceStack({
+  configuredSourceKinds,
+  totals,
+  overallTotal
+}: {
+  configuredSourceKinds: readonly SourceKind[];
+  totals: Record<SourceKind, TokenTotals>;
+  overallTotal: number;
+}) {
+  const rows = sourceUsageRows(totals, configuredSourceKinds);
+
   return (
     <div className="source-stack">
-      {Object.entries(totals).map(([source, total]) => {
-        const sourceKind = source as SourceKind;
-        const percent = overallTotal > 0 ? Math.max(4, Math.round((total.total_tokens / overallTotal) * 100)) : 0;
+      {rows.map(({ sourceKind, totals: total }) => {
+        const percent = barPercent(total.total_tokens, overallTotal, 4);
         return (
-          <div className="stack-row" key={source}>
+          <div className="stack-row" key={sourceKind}>
             <div className="stack-label">
               <span>{sourceLabels[sourceKind]}</span>
               <span>{formatTokens(total.total_tokens)}</span>
@@ -794,7 +1193,7 @@ function TokenSplit({ totals }: { totals: TokenTotals }) {
         <div className="split-row" key={label}>
           <span>{label}</span>
           <div className="bar-track">
-            <span className="bar-fill teal" style={{ width: `${Math.max(3, Math.round((value / max) * 100))}%` }} />
+            <span className="bar-fill teal" style={{ width: `${barPercent(value, max, 3)}%` }} />
           </div>
           <strong>{formatTokens(value)}</strong>
         </div>
@@ -813,7 +1212,7 @@ function DailyTrend({ payload }: { payload: MockSummaryPayload }) {
         <div className="trend-row" key={day}>
           <span>{day.slice(5)}</span>
           <div className="bar-track">
-            <span className="bar-fill teal" style={{ width: `${Math.max(3, Math.round((totals.total_tokens / max) * 100))}%` }} />
+            <span className="bar-fill teal" style={{ width: `${barPercent(totals.total_tokens, max, 3)}%` }} />
           </div>
           <strong>{formatTokens(totals.total_tokens)}</strong>
         </div>
@@ -822,7 +1221,7 @@ function DailyTrend({ payload }: { payload: MockSummaryPayload }) {
   );
 }
 
-function DriverTable({ payload }: { payload: MockSummaryPayload }) {
+function DriverTable({ payload, totals }: { payload: MockSummaryPayload; totals: Record<SourceKind, TokenTotals> }) {
   return (
     <table className="data-table">
       <thead>
@@ -834,7 +1233,7 @@ function DriverTable({ payload }: { payload: MockSummaryPayload }) {
         </tr>
       </thead>
       <tbody>
-        {sourceRows(payload).map((row) => (
+        {sourceRows(totals, payload).map((row) => (
           <tr key={row.source}>
             <td>{row.driver}</td>
             <td>{sourceLabels[row.source]}</td>
@@ -886,8 +1285,9 @@ function StatusBadge({ label }: { label: string }) {
   return <span className="status-badge">{label}</span>;
 }
 
-function sourceRows(payload: MockSummaryPayload) {
-  return Object.entries(payload.summary.by_source)
+function sourceRows(totals: Record<SourceKind, TokenTotals>, payload: MockSummaryPayload) {
+  return Object.entries(totals)
+    .filter(([, totals]) => totals.total_tokens > 0)
     .map(([source, totals]) => ({
       source: source as SourceKind,
       driver: sourceLabels[source as SourceKind],
@@ -896,6 +1296,17 @@ function sourceRows(payload: MockSummaryPayload) {
     }))
     .sort((left, right) => right.tokens - left.tokens)
     .slice(0, 5);
+}
+
+function isCompactMetricValue(value: string, tone?: "primary" | "secondary") {
+  return tone !== "primary" && value.length >= 10;
+}
+
+function barPercent(value: number, max: number, minimumVisiblePercent: number) {
+  if (value <= 0 || max <= 0) {
+    return 0;
+  }
+  return Math.max(minimumVisiblePercent, Math.round((value / max) * 100));
 }
 
 function firstKnownAllowance(payload: MockSummaryPayload, sourceKinds: SourceKind[]) {
@@ -910,10 +1321,21 @@ function headerSubtitle(view: ViewId, dataMode: DashboardDataMode) {
     daily: `Local time: Asia/Shanghai. Today from the ${summaryLabel}.`,
     weekly: `Rolling 7-day aggregate from the ${summaryLabel}.`,
     sources: "Connector readiness and confidence labels.",
-    api_costs: "Secondary OpenAI API estimate; unavailable data stays visible.",
+    api_costs: "Secondary API cost providers; unavailable data stays visible.",
     settings: "Timezone and privacy defaults for the mock shell."
   };
   return subtitles[view];
+}
+
+function configuredUsageSourceKinds(preferences: SourceRootPreferences): SourceKind[] {
+  const configured: SourceKind[] = [];
+  if (preferences.rootDraft.codexJsonlRoot?.trim()) {
+    configured.push("codex");
+  }
+  if (preferences.rootDraft.claudeCodeJsonlRoot?.trim()) {
+    configured.push("claude_code");
+  }
+  return configured;
 }
 
 function formatTokens(value: number) {

@@ -13,6 +13,15 @@ SOURCE_KINDS = (
     "gemini_cli",
     "github_copilot",
     "openai_api_cost",
+    "claude_api_cost",
+    "gemini_api_cost",
+    "deepseek_api_cost",
+)
+API_COST_SOURCE_KINDS = (
+    "openai_api_cost",
+    "claude_api_cost",
+    "gemini_api_cost",
+    "deepseek_api_cost",
 )
 CONFIDENCE_VALUES = ("official", "local_exact", "local_estimated", "manual", "unavailable")
 ALLOWANCE_STATUSES = ("api_backed", "manual", "derived", "unavailable")

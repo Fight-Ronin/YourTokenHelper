@@ -157,6 +157,27 @@ def mock_allowance_windows() -> list[AllowanceWindow]:
             used_amount=1.03,
             note="OpenAI API cost is secondary and may not expose allowance.",
         ),
+        AllowanceWindow(
+            source_kind="claude_api_cost",
+            source_id="claude_api_cost:mock",
+            status="unavailable",
+            unit="usd",
+            note="Claude API cost is secondary and requires verified billing export or API coverage.",
+        ),
+        AllowanceWindow(
+            source_kind="gemini_api_cost",
+            source_id="gemini_api_cost:mock",
+            status="unavailable",
+            unit="usd",
+            note="Gemini API cost is secondary and requires verified billing export or API coverage.",
+        ),
+        AllowanceWindow(
+            source_kind="deepseek_api_cost",
+            source_id="deepseek_api_cost:mock",
+            status="unavailable",
+            unit="usd",
+            note="DeepSeek API cost is secondary and requires verified billing export or API coverage.",
+        ),
     ]
 
 
@@ -168,4 +189,7 @@ def mock_source_states() -> list[dict[str, Any]]:
         {"source_kind": "gemini_cli", "status": "setup_required", "confidence": "local_estimated"},
         {"source_kind": "github_copilot", "status": "official_report", "confidence": "official"},
         {"source_kind": "openai_api_cost", "status": "secondary_source", "confidence": "official"},
+        {"source_kind": "claude_api_cost", "status": "secondary_source", "confidence": "unavailable"},
+        {"source_kind": "gemini_api_cost", "status": "secondary_source", "confidence": "unavailable"},
+        {"source_kind": "deepseek_api_cost", "status": "secondary_source", "confidence": "unavailable"},
     ]

@@ -1,7 +1,7 @@
 import type { RefreshSourcesManualDraft } from "../commands/refreshSourcesManualArgs.js";
-import type { SourceKind } from "../types.js";
+import type { ApiCostSourceKind, SourceKind } from "../types.js";
 
-export type LocalSetupSourceKind = Exclude<SourceKind, "openai_api_cost">;
+export type LocalSetupSourceKind = Exclude<SourceKind, ApiCostSourceKind>;
 export type ExplicitRootSourceKind = "codex" | "claude_code";
 export type ExplicitRootSelectionDraft = Pick<
   RefreshSourcesManualDraft,
@@ -27,7 +27,7 @@ export type ExplicitRootMockRow = {
     | "Manual status"
     | "Telemetry/export setup"
     | "Official report";
-  detail: "Label only, no path stored" | "Explicit root required" | "Status only" | "Official report";
+  detail: "Hidden root selected" | "Explicit root required" | "Status only" | "Official report";
   nextStep:
     | "Needs explicit root"
     | "Choose explicit root"
@@ -42,7 +42,7 @@ export type ExplicitRootMockRow = {
 };
 
 export const pathPolicyLabels: Record<ExplicitRootMockRow["pathPolicy"], string> = {
-  no_path_stored: "No path stored",
+  no_path_stored: "Path hidden",
   no_local_parser: "No local parser",
   official_report_only: "Official report"
 };
@@ -108,7 +108,7 @@ export const explicitRootMockRows: readonly ExplicitRootMockRow[] = [
     sourceKind: "codex",
     state: "Selected (mock)",
     displayValue: "Selected, path hidden",
-    detail: "Label only, no path stored",
+    detail: "Explicit root required",
     nextStep: "Needs explicit root",
     pathPolicy: "no_path_stored",
     rootReadiness: "label_only",
@@ -227,7 +227,7 @@ export function buildExplicitRootSetupRows(
       ...row,
       state: hasExplicitRoot ? "Selected (mock)" : "Not selected",
       displayValue: hasExplicitRoot ? "Selected, path hidden" : "No root selected",
-      detail: hasExplicitRoot ? "Label only, no path stored" : "Explicit root required",
+      detail: hasExplicitRoot ? "Hidden root selected" : "Explicit root required",
       nextStep: hasExplicitRoot ? "Ready for gated refresh" : "Choose explicit root",
       rootReadiness: hasExplicitRoot ? "selected_explicit_root" : "missing_explicit_root",
       pickerAction: hasExplicitRoot ? "Change" : "Choose"

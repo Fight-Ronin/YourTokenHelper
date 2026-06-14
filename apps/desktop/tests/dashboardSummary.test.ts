@@ -4,6 +4,8 @@ import {
   dashboardQualityLabel,
   emptyTokenTotals,
   latestSummaryDay,
+  sourceUsageRows,
+  sourceTotalsForDay,
   startupStorageStatusLabel
 } from "../src/data/dashboard-summary.js";
 
@@ -23,6 +25,21 @@ assertDeepEqual(
   emptyTokenTotals(),
   "OpenAI API cost should be an explicit empty secondary source until PR6"
 );
+assertDeepEqual(
+  dashboardPayload.summary.by_source.claude_api_cost,
+  emptyTokenTotals(),
+  "Claude API cost should be an explicit empty secondary source until provider coverage is verified"
+);
+assertDeepEqual(
+  dashboardPayload.summary.by_source.gemini_api_cost,
+  emptyTokenTotals(),
+  "Gemini API cost should be an explicit empty secondary source until provider coverage is verified"
+);
+assertDeepEqual(
+  dashboardPayload.summary.by_source.deepseek_api_cost,
+  emptyTokenTotals(),
+  "DeepSeek API cost should be an explicit empty secondary source until provider coverage is verified"
+);
 assert(
   dashboardPayload.source_states.find((sourceState) => sourceState.source_kind === "openai_api_cost")?.status ===
     "secondary_source",
@@ -33,7 +50,57 @@ assert(
     "unavailable",
   "OpenAI API cost confidence should stay unavailable after local refresh"
 );
+for (const sourceKind of ["claude_api_cost", "gemini_api_cost", "deepseek_api_cost"] as const) {
+  const sourceState = dashboardPayload.source_states.find((item) => item.source_kind === sourceKind);
+  assert(sourceState?.status === "secondary_source", `${sourceKind} should stay secondary after local refresh`);
+  assert(sourceState.confidence === "unavailable", `${sourceKind} should stay unavailable after local refresh`);
+}
 assert(latestSummaryDay(dashboardPayload) === "2026-06-14", "latest day should come from refresh by_day keys");
+assert(
+  sourceTotalsForDay(dashboardPayload, "2026-06-14").codex.total_tokens === 2540,
+  "daily source totals should come from the selected day, not the whole rolling window"
+);
+assertDeepEqual(
+  sourceTotalsForDay(dashboardPayload, "2026-06-13").codex,
+  emptyTokenTotals(),
+  "missing daily source totals should stay explicit zeroes"
+);
+assertDeepEqual(
+  sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-14"), ["codex", "claude_code"]).map(
+    (row) => row.sourceKind
+  ),
+  ["claude_code", "codex"],
+  "Source Usage rows should hide unavailable zero-token sources after local refresh"
+);
+assertDeepEqual(
+  sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-13"), ["codex"]).map((row) => row.sourceKind),
+  ["codex"],
+  "configured roots should remain visible even when the selected day has no tokens"
+);
+
+const totalsWithConfiguredLowUsage = sourceTotalsForDay(dashboardPayload, "2026-06-13");
+totalsWithConfiguredLowUsage.codex = {
+  ...emptyTokenTotals(),
+  input_tokens: 10,
+  total_tokens: 10
+};
+totalsWithConfiguredLowUsage.cursor = {
+  ...emptyTokenTotals(),
+  input_tokens: 100,
+  total_tokens: 100
+};
+assertDeepEqual(
+  sourceUsageRows(totalsWithConfiguredLowUsage, ["codex"]).map((row) => row.sourceKind),
+  ["codex", "cursor"],
+  "configured roots should be grouped above unconfigured sources with usage"
+);
+
+const copiedDailyTotals = sourceTotalsForDay(dashboardPayload, "2026-06-14");
+copiedDailyTotals.codex.total_tokens = 999999;
+assert(
+  dashboardPayload.summary.by_day_source["2026-06-14"].codex.total_tokens === 2540,
+  "daily source totals should be copied before display helpers can mutate them"
+);
 assert(
   dashboardQualityLabel("mock", { phase: "idle" }) === "Mock data",
   "idle mock dashboard should keep the mock quality label"

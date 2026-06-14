@@ -11,12 +11,14 @@
   "include": [
     "src/commands/refreshSourcesManualArgs.ts",
     "src/commands/refreshSourcesManualInvoker.ts",
+    "src/commands/sourceRootPreferences.ts",
     "src/commands/sourceRefreshSummary.ts",
     "src/data/dashboard-summary.ts",
     "src/data/source-setup.mock.ts",
     "tests/dashboardSummary.test.ts",
     "tests/refreshSourcesManualArgs.test.ts",
     "tests/refreshSourcesManualInvoker.test.ts",
+    "tests/sourceRootPreferences.test.ts",
     "tests/sourceSetupMock.test.ts",
     "tests/sourceRefreshSummary.test.ts"
   ]

@@ -107,6 +107,12 @@ Expected review outcomes:
   `Selected, path hidden`; the typed root values are not echoed elsewhere.
 - The Manual Refresh panel changes from blocked to ready once both roots are
   present, then the `Refresh` button invokes only `refresh_sources_manual`.
+- Clicking `Save roots` persists the hidden Codex and Claude Code roots to
+  Tauri app-data config only after explicit user action; the UI shows
+  `Saved locally` rather than the path values, and `Forget` clears that config.
+- Auto refresh stays disabled until the roots are saved, then reuses the saved
+  roots and the same `refresh_sources_manual` command on a fixed 15-minute
+  interval while the app is open.
 - The result message is `Updated 7,570 aggregate tokens`.
 - Daily and rolling 7-day Weekly switch to `Live local aggregate` and show the
   same 7,570 aggregate-token fixture total.
@@ -133,6 +139,9 @@ The handoff payload must not include:
 - Source roots, paths, filenames, or local user directory names.
 
 Only aggregate usage buckets, source states, and generic sync metadata are exposed.
+Explicit source roots may be stored separately in the local Tauri app-data
+config only after the user clicks `Save roots`; saved roots must still not be
+displayed in setup rows, refresh results, or error payloads.
 
 ## Command Boundary
 
@@ -144,6 +153,12 @@ The command boundary currently supports:
 - `claude_code_jsonl_root`, optional explicit path.
 - `end_day_utc`, required rolling 7-day end date in strict `YYYY-MM-DD` format.
 - `started_at`, optional synthetic or caller-provided ISO-8601 refresh timestamp.
+
+The saved-root config boundary is separate from refresh args. Tauri registers
+`load_saved_source_roots`, `save_source_roots`, and
+`clear_saved_source_roots`; those commands store only the explicit Codex and
+Claude Code root strings plus auto-refresh settings in app-data config. They do
+not add default path discovery and do not put roots in refresh result payloads.
 
 The backend request contract is `PrimaryRefreshCommandRequest`, parsed from
 command arguments by `primary_refresh_command_request_from_mapping`. Unknown
@@ -212,9 +227,17 @@ so command tests can cover startup success and unavailable behavior without a
 Tauri runtime import.
 `apps/desktop/src/data/dashboard-summary.ts` normalizes a successful
 `storage_summary` into the dashboard payload used by Daily and Weekly. It
-completes the UI source map without displaying paths and marks
-`openai_api_cost` as a secondary unavailable source so PR5 local refresh does
-not reuse mock API cost values.
+completes the UI source map without displaying paths and marks API cost provider
+source kinds as secondary unavailable sources so PR5 local refresh does not
+reuse mock API cost values.
+Daily source panels read the nested `by_day_source` aggregate for the selected
+day; Weekly source panels continue to read the rolling 7-day `by_source`
+aggregate. This keeps source-level bars in the same time window as the metric
+strip.
+Manual refresh replaces each ready source's aggregate buckets inside the
+current rolling 7-day window before writing refreshed events. Sync-run history
+continues to accumulate, but token totals do not increase just because the user
+clicks refresh repeatedly.
 The Sources page also keeps successful `refresh_results` in memory for the
 current session and renders a `Last Refresh` table with aggregate sync metadata
 only: source, status, confidence, event count, and sync-run id.
@@ -236,8 +259,8 @@ Rows separate their internal setup `state` from the visible `displayValue`, so a
 selected root can render as a safe label such as `Selected, path hidden` without
 printing a source root, filename, or local directory.
 Typed `pathPolicyLabels` make those states visible in the mock Sources panel:
-explicit roots show no path storage, Cursor and Gemini CLI show no local parser,
-and GitHub Copilot stays official-report only.
+explicit roots show hidden path display, Cursor and Gemini CLI show no local
+parser, and GitHub Copilot stays official-report only.
 Typed `nextStep` hints keep the next action explicit without wiring live sync:
 Codex and Claude Code point to explicit-root setup, Cursor stays manual/status
 only, Gemini CLI points to telemetry/export setup, and GitHub Copilot points to
@@ -303,6 +326,11 @@ uses the same internal app-data database path and returns the aggregate storage
 summary shape without `refresh_results`. Missing persisted storage returns a
 structured unavailable error instead of creating an empty database or silently
 showing zero usage.
+The Rust crate also registers `load_saved_source_roots`, `save_source_roots`,
+and `clear_saved_source_roots` for explicit-root app-data config. The config
+stores only saved Codex and Claude Code roots plus auto-refresh settings after
+user action. Saved values are trimmed, auto refresh is disabled unless both
+primary roots are present, and config read/write errors stay redacted.
 
 ## Handoff Status
 
@@ -334,7 +362,8 @@ Ready for review:
   Tauri app-data database path selection, file-backed database env handoff,
   persisted storage readback, and Rust-side gating with synthetic fixtures,
   registers `refresh_sources_manual` behind the Rust-side gate, registers
-  `load_storage_summary` as read-only aggregate readback, and keeps
+  `load_storage_summary` as read-only aggregate readback, registers saved-root
+  config commands for explicit user action, and keeps
   `source_refresh_summary_sample` static.
 
 Still blocked by setup:
@@ -350,6 +379,10 @@ Still blocked by setup:
   while preparing the command draft only after readiness is satisfied. The React
   Sources view consumes that hidden-root boundary with empty roots by default,
   so it renders missing-root readiness until a user supplies both roots.
+- The Sources view can save or forget explicit roots through Tauri app-data
+  config commands. Saved roots remain hidden in the UI; auto refresh is
+  available only after both roots are ready and saved, and it reuses the same
+  gated refresh command while the app is open.
 - `applyExplicitRootSetupAction` models the future picker handoff as a pure
   hidden-root draft update: selecting a root trims the value for the command
   draft, clearing a root removes it, and the setup rows still serialize only
@@ -373,12 +406,15 @@ Still blocked by setup:
   summary visible instead of creating storage, showing zero usage, or exposing
   paths.
 - The Sources view renders a path-free `Saved Aggregate` panel for startup
-  readback state, showing readback status, dashboard source, and manual-only
+  readback state, showing readback status, dashboard source, and manual-or-auto
   refresh posture.
 - The Sources page shows the latest returned `refresh_results` as aggregate sync
   metadata, without source roots, local paths, filenames, or raw content.
-- OpenAI API Cost remains secondary and unavailable after PR5 local refresh; the
-  desktop does not reuse mock dollar values for live local summaries.
+- API cost provider sources remain secondary and unavailable after PR5 local
+  refresh; the desktop does not reuse mock dollar values for live local
+  summaries.
+- The API Costs UI may show provider placeholders for OpenAI, Claude, Gemini,
+  and DeepSeek, but PR5 does not connect live billing APIs or prices.
 - No default local path scanning.
 - No real local user directories are read without explicit roots.
 - No Cursor, Gemini CLI, or GitHub Copilot local parser maturity is claimed
@@ -399,9 +435,11 @@ Still blocked by setup:
 | Rust/Tauri command-name, args, result, and process contract | Ready | `refresh_sources_manual` is registered behind the Rust-side explicit-root gate; snake_case args shape, success/error result union, Tauri app-data DB path selection, backend module args, stdin serialization, gated process invocation, optional file-backed DB env handoff, persisted `load_storage_summary` readback, and stdout parsing are tested with synthetic fixtures. |
 | Static desktop sample command | Ready | `source_refresh_summary_sample` is registered and returns embedded aggregate JSON only. |
 | Persisted summary readback command | Ready | `load_storage_summary` reads the same app-data SQLite aggregate by internal DB path only, returns storage summary payloads without refresh metadata, and reports missing storage as unavailable instead of zero usage. |
+| Explicit-root config commands | Ready | `load_saved_source_roots`, `save_source_roots`, and `clear_saved_source_roots` store hidden Codex/Claude roots plus auto-refresh settings in app-data only after user action; errors stay redacted and auto refresh requires both roots. |
 | Startup persisted-summary readback | Ready | React calls only the read-only `load_storage_summary` command on startup, promotes existing aggregate storage into Daily/Weekly, and falls back to mock data on unavailable or thrown failures without exposing paths. Sources also shows the path-free saved aggregate readback state. |
 | Live desktop refresh action | Gated shell | Sources imports the production command client and calls only `refresh_sources_manual`, but the empty-root default keeps the button disabled until explicit Codex and Claude Code roots are present. |
-| Manual refresh UI affordance | Gated UI | Sources shows the command name from typed `manualRefreshMockState`, tested path-free needs labels, dynamic root readiness, tested bridge state, running/success/failure states, and a disabled blocked state via `buildManualRefreshDraftFromHiddenRoots`. |
+| Header refresh shortcut | Gated UI | The header button is labeled `Refresh`, reuses the same `refresh_sources_manual` command draft and running state, and stays disabled until explicit Codex and Claude Code roots are saved. |
+| Manual refresh UI affordance | Gated UI | Sources shows the command name from typed `manualRefreshMockState`, tested path-free needs labels, dynamic root readiness, tested bridge state, running/success/failure states, auto-refresh state, and a disabled blocked state via `buildManualRefreshDraftFromHiddenRoots`. |
 | Manual root entry shell | Gated UI | Typed `explicitRootMockRows`, masked manual inputs with browser autocomplete/spellcheck disabled, path-free `displayValue` labels, `buildExplicitRootSetupRows`, `buildManualRefreshDraftFromHiddenRoots`, `pathPolicyLabels`, and `nextStep` hints distinguish label-only, selected-explicit-root, no-local-parser, telemetry/export, and official-report states; no OS picker opens and no supplied root is rendered. |
 | Refresh-to-dashboard handoff | Gated UI | Successful manual refresh normalizes `storage_summary` into Daily and Weekly dashboard state, labels the shell `Live local aggregate`, and keeps API cost unavailable instead of showing mock dollars. |
 | Last refresh metadata | Gated UI | Sources renders returned `refresh_results` as source/status/confidence/events/sync-run metadata only, with event count and sync-run id formatted as metadata integers rather than token totals; no source roots, local paths, filenames, prompts, responses, request bodies, transcripts, tool output, or code snippets. |

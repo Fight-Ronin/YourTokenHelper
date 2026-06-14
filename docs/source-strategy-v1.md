@@ -85,7 +85,7 @@ Every parser or API connector should normalize data into aggregate events.
 
 Required:
 
-- `source_kind`: `codex`, `claude_code`, `cursor`, `gemini_cli`, `github_copilot`, `openai_api_cost`.
+- `source_kind`: `codex`, `claude_code`, `cursor`, `gemini_cli`, `github_copilot`, `openai_api_cost`, `claude_api_cost`, `gemini_api_cost`, `deepseek_api_cost`.
 - `source_id`: stable local identifier.
 - `started_at`.
 - `ended_at`, if available.

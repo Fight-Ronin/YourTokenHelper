@@ -180,9 +180,23 @@ function assert(condition: boolean, message: string): asserts condition {
 }
 
 function assertDeepEqual(actual: unknown, expected: unknown) {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
+  const actualJson = JSON.stringify(stableValue(actual));
+  const expectedJson = JSON.stringify(stableValue(expected));
   if (actualJson !== expectedJson) {
     throw new Error(`expected ${expectedJson}, got ${actualJson}`);
   }
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stableValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+        .map(([key, item]) => [key, stableValue(item)])
+    );
+  }
+  return value;
 }

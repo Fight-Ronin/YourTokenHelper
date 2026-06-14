@@ -95,6 +95,32 @@ def test_storage_payload_uses_rolling_7d_window_not_all_time_data():
     assert "2026-06-07" not in payload["summary"]["by_day"]
 
 
+def test_storage_payload_keeps_daily_source_split_separate_from_rolling_source_split():
+    connection = memory_connection()
+    seed_mock_storage(connection)
+    record_usage_events(
+        connection,
+        [
+            UsageEvent(
+                source_kind="codex",
+                source_id="codex:mock",
+                started_at="2026-06-13T12:00:00Z",
+                input_tokens=900,
+                output_tokens=100,
+                total_tokens=1000,
+                confidence="local_exact",
+            )
+        ],
+    )
+
+    payload = build_storage_summary_payload(connection, end_day_utc="2026-06-14")
+
+    assert payload["summary"]["by_source"]["codex"]["total_tokens"] == 3540
+    assert payload["summary"]["by_day"]["2026-06-14"]["total_tokens"] == 60140
+    assert payload["summary"]["by_day_source"]["2026-06-14"]["codex"]["total_tokens"] == 2540
+    assert payload["summary"]["by_day_source"]["2026-06-13"]["codex"]["total_tokens"] == 1000
+
+
 def test_storage_payload_preserves_unavailable_allowance_without_fake_remaining():
     connection = memory_connection()
     seed_mock_storage(connection)

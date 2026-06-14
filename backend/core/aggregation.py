@@ -22,6 +22,7 @@ class UsageSummary:
     totals: TokenTotals
     by_source: dict[str, TokenTotals]
     by_day: dict[str, TokenTotals]
+    by_day_source: dict[str, dict[str, TokenTotals]]
     rolling_7d: RollingWindowSummary
 
 
@@ -29,15 +30,22 @@ def aggregate_usage(events: Iterable[UsageEvent]) -> UsageSummary:
     sorted_events = sorted(events, key=lambda event: event.started_at)
     by_source: dict[str, TokenTotals] = {}
     by_day: dict[str, TokenTotals] = {}
+    by_day_source: dict[str, dict[str, TokenTotals]] = {}
 
     for event in sorted_events:
+        event_totals = event.token_totals()
         by_source[event.source_kind] = add_totals(
             by_source.get(event.source_kind, TokenTotals()),
-            event.token_totals(),
+            event_totals,
         )
         by_day[event.day_utc] = add_totals(
             by_day.get(event.day_utc, TokenTotals()),
-            event.token_totals(),
+            event_totals,
+        )
+        day_sources = by_day_source.setdefault(event.day_utc, {})
+        day_sources[event.source_kind] = add_totals(
+            day_sources.get(event.source_kind, TokenTotals()),
+            event_totals,
         )
 
     window_start, window_end = rolling_window(sorted_events)
@@ -52,6 +60,7 @@ def aggregate_usage(events: Iterable[UsageEvent]) -> UsageSummary:
         totals=sum_totals(event.token_totals() for event in sorted_events),
         by_source=by_source,
         by_day=by_day,
+        by_day_source=by_day_source,
         rolling_7d=RollingWindowSummary(
             window_start=window_start,
             window_end=window_end,

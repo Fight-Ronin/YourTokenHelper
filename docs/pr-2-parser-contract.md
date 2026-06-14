@@ -22,7 +22,7 @@ This PR should prove that Codex, Claude Code, Cursor, Gemini CLI, GitHub Copilot
 
 Required fields:
 
-- `source_kind`: `codex`, `claude_code`, `cursor`, `gemini_cli`, `github_copilot`, or secondary `openai_api_cost`.
+- `source_kind`: `codex`, `claude_code`, `cursor`, `gemini_cli`, `github_copilot`, or secondary API cost provider kinds: `openai_api_cost`, `claude_api_cost`, `gemini_api_cost`, and `deepseek_api_cost`.
 - `source_id`: stable local source identifier.
 - `started_at`: UTC ISO-8601 timestamp.
 - `total_tokens`.
@@ -70,9 +70,11 @@ Backend summaries exposed to the desktop mock UI should use plain JSON-ready dic
 - `totals`.
 - `by_source`.
 - `by_day`.
+- `by_day_source`.
 - `rolling_7d`.
 
 This keeps PR3 mock data aligned to the backend contract without connecting the desktop shell to experimental parser files.
+`by_day_source` is the nested day/source aggregate used when Daily needs tool-level splits without mixing in the rolling 7-day source totals.
 
 The PR3 mock UI can start from `backend/fixtures/mock_v1_summary.json`. That fixture is synthetic aggregate data generated from backend core contracts; it is not parsed from real local logs.
 
@@ -109,6 +111,9 @@ When `status` is `unavailable`, `remaining_amount`, `limit_amount`, and `reset_a
 | Gemini CLI | Has synthetic telemetry fixture | `not-found` on this machine | Parse telemetry/export token fields only; never persist prompt/response text. |
 | GitHub Copilot | Has synthetic official-report fixture | `needs-parser` local state on this machine | Keep official metrics/report interface and personal manual fallback. |
 | OpenAI API cost | Has separate API spike fixture | `secondary-source` | Keep for later API-cost parser; not part of local fixture parser yet. |
+| Claude API cost | Provider slot only | `secondary-source` | Keep unavailable until official billing API or export fixture coverage exists. |
+| Gemini API cost | Provider slot only | `secondary-source` | Keep unavailable until official billing API or export fixture coverage exists. |
+| DeepSeek API cost | Provider slot only | `secondary-source` | Keep unavailable until official billing API or export fixture coverage exists. |
 
 ## Verification
 

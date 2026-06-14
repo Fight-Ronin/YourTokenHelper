@@ -9,14 +9,16 @@ PR3 scope:
 - keep API cost secondary;
 - do not connect to real local parsers, SQLite, or live APIs.
 
-Header sync and setup affordances are disabled in the mock shell. They preserve
-the future layout contract without implying that local source sync is wired.
+The header `Refresh` button is a shortcut for the same gated manual refresh
+path used by the Sources view. It stays disabled until Codex and Claude Code
+roots are present, saved, and the refresh command is not already running; it
+does not infer local paths or use a separate sync path.
 The Sources view also shows disabled explicit-root setup rows for Codex and
 Claude Code; these rows do not open a picker, call Tauri, or read local paths.
 Codex is tracked as `Selected (mock)` while Claude Code remains `Not selected`,
 but the visible `displayValue` is a safe label such as
-`Selected, path hidden` or `No root selected`; neither state stores or displays
-a real root path.
+`Selected, path hidden` or `No root selected`; neither state displays a real
+root path.
 Those setup rows live in the typed `explicitRootMockRows` fixture, which keeps
 Cursor, Gemini CLI, and GitHub Copilot as status-only/report-only paths.
 Rows also display typed `pathPolicyLabels` so status-only sources are labeled as
@@ -49,9 +51,17 @@ The explicit-root rows now use masked manual inputs for Codex and Claude Code
 instead of an OS picker. Typed values update only the hidden command draft; the
 visible setup rows continue to show path-free labels.
 This keeps browser autocomplete and spellcheck disabled.
+The Sources view also exposes explicit `Save roots` and `Forget` controls.
+Saving writes the hidden Codex and Claude Code roots to a Tauri app-data config
+file only after user action; the UI continues to show path-free labels and
+command responses still do not echo root values. `Forget` clears that local
+config. Auto refresh stays disabled until both roots are ready and saved, then
+uses the saved roots while the app is open at a fixed 15-minute interval.
 The Sources view imports the production command client behind that gate. It
 names `refresh_sources_manual`, tracks running/success/failure states, and keeps
 the action disabled in the empty-root default state.
+The header `Refresh` shortcut reuses the same command draft and running state,
+but requires saved roots so it cannot run from transient unsaved input.
 That panel is driven by a typed `manualRefreshMockState` with `canRun: false`,
 so the default mock readiness remains centralized while live wiring is present.
 It displays the hidden-root boundary's tested path-free needs label, dynamic
@@ -84,8 +94,14 @@ state keeps the action disabled.
 When a gated manual refresh succeeds, the React shell promotes the returned
 `storage_summary` into the Daily and Weekly dashboard state through
 `src/data/dashboard-summary.ts`. That normalizer completes the source map for UI
-rendering, marks OpenAI API Cost as secondary and unavailable in PR5, and avoids
-reusing the mock dollar estimate after live local refresh.
+rendering, marks API cost providers as secondary and unavailable in PR5, and
+avoids reusing the mock dollar estimate after live local refresh.
+The Source Usage panels then filter that completed map through a tested display
+helper: sources with tokens are shown, saved Codex/Claude roots stay visible,
+and unconfigured zero-token sources do not take bar space.
+The API Costs route is still secondary, but its provider table now reserves
+separate unavailable/planned rows for OpenAI, Claude, Gemini, and DeepSeek
+instead of implying that OpenAI is the only future cost source.
 The Sources page also keeps the returned `refresh_results` in memory for the
 current session and renders a `Last Refresh` table with only aggregate sync
 metadata: source, status, confidence, event count, and sync-run id. Event count
@@ -100,7 +116,7 @@ showing zero usage, or reflecting local paths.
 The Sources view renders the same startup readback state in a `Saved Aggregate`
 panel. It labels readback as checking, loaded, or unavailable; the dashboard
 row shows either saved aggregate or mock fallback; and the refresh row stays
-manual-only.
+manual-or-auto.
 
 It also exposes `buildRefreshSourcesManualArgs`, a pure helper that converts
 camelCase UI drafts into the snake_case manual refresh args. Blank optional root
@@ -145,6 +161,11 @@ click `Refresh`. Expected result: the Manual Refresh panel reports
 fixture root, filename, prompt, response, request body, transcript, tool output,
 or code snippet is displayed. Restarting the app should read the saved aggregate
 through `load_storage_summary` instead of showing fake zero usage.
+To verify saved roots without exposing paths, click `Save roots`, restart, and
+confirm the masked inputs are populated, Storage shows `Saved locally`, and the
+visible setup rows still do not print the root values. Auto refresh may then be
+enabled from the Manual Refresh panel and should reuse the same
+`refresh_sources_manual` command at the fixed interval.
 
 `src-tauri/src/lib.rs` exposes a static `source_refresh_summary_sample` command for command-shape checks. It embeds the shared JSON sample at build time; it does not read local files or connect to backend parsers.
 The Rust crate also registers the production `refresh_sources_manual` command,
@@ -173,5 +194,9 @@ The Rust crate also registers a read-only `load_storage_summary` command that
 uses the same internal app-data database path, returns only the aggregate storage
 summary shape, and reports unavailable storage with a structured error instead
 of creating an empty database or showing fake zero usage.
+It also registers `load_saved_source_roots`, `save_source_roots`, and
+`clear_saved_source_roots` for the explicit-root app-data config. Those commands
+trim saved roots, keep auto refresh disabled unless both primary roots are
+present, and return fixed redacted errors on config failures.
 The desktop TypeScript contract also imports both shared samples, so command
 tests do not hand-roll the structured error payload.

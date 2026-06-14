@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from backend.core import CONFIDENCE_VALUES, SOURCE_KINDS, ContractError, UsageEvent
-from backend.storage import record_sync_run, record_usage_events, upsert_source
+from backend.storage import (
+    record_sync_run,
+    record_usage_events,
+    replace_usage_events_for_source_window,
+    upsert_source,
+)
 
 
 SOURCE_STATUSES = (
@@ -65,7 +70,12 @@ def sync_source_adapter(
     adapter: SourceAdapter,
     *,
     started_at: str | None = None,
+    replace_start_day_utc: str | None = None,
+    replace_end_day_utc: str | None = None,
 ) -> SyncResult:
+    if (replace_start_day_utc is None) != (replace_end_day_utc is None):
+        raise ContractError("replacement window requires both start and end days")
+
     state = adapter.get_state()
     upsert_source(
         connection,
@@ -79,6 +89,22 @@ def sync_source_adapter(
     if state.status == "ready":
         try:
             events = adapter.read_events()
+            if replace_start_day_utc is not None and replace_end_day_utc is not None:
+                events = [
+                    event
+                    for event in events
+                    if replace_start_day_utc <= event.day_utc <= replace_end_day_utc
+                ]
+                replace_usage_events_for_source_window(
+                    connection,
+                    source_kind=state.source_kind,
+                    source_id=state.source_id,
+                    start_day_utc=replace_start_day_utc,
+                    end_day_utc=replace_end_day_utc,
+                    events=events,
+                )
+            else:
+                record_usage_events(connection, events)
         except PermissionError:
             state = SourceState(
                 source_kind=state.source_kind,
@@ -109,9 +135,6 @@ def sync_source_adapter(
                 status=state.status,
                 confidence=state.confidence,
             )
-        else:
-            record_usage_events(connection, events)
-
     sync_run_id = record_sync_run(
         connection,
         source_kind=state.source_kind,

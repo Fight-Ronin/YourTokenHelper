@@ -34,6 +34,9 @@ def test_mock_summary_fixture_has_pr3_ready_contract_shape():
         "gemini_cli",
         "github_copilot",
         "openai_api_cost",
+        "claude_api_cost",
+        "gemini_api_cost",
+        "deepseek_api_cost",
     }
 
 

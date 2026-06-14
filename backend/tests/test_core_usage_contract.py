@@ -1,6 +1,7 @@
 import pytest
 
 from backend.core import (
+    API_COST_SOURCE_KINDS,
     AllowanceWindow,
     ContractError,
     UsageEvent,
@@ -91,15 +92,19 @@ def test_aggregate_usage_builds_daily_source_and_rolling_weekly_totals():
     assert summary.by_source["codex"].total_tokens == 155
     assert summary.by_source["claude_code"].total_tokens == 260
     assert summary.by_day["2026-06-14"].total_tokens == 400
+    assert summary.by_day_source["2026-06-07"]["codex"].total_tokens == 15
+    assert summary.by_day_source["2026-06-14"]["codex"].total_tokens == 140
+    assert summary.by_day_source["2026-06-14"]["claude_code"].total_tokens == 260
     assert summary.rolling_7d.window_start == "2026-06-08"
     assert summary.rolling_7d.window_end == "2026-06-14"
     assert summary.rolling_7d.totals.total_tokens == 400
 
 
-def test_openai_api_cost_is_secondary_source_without_required_cost_totaling():
+@pytest.mark.parametrize("source_kind", API_COST_SOURCE_KINDS)
+def test_api_cost_sources_are_secondary_without_required_cost_totaling(source_kind):
     event = UsageEvent(
-        source_kind="openai_api_cost",
-        source_id="openai_api_cost:fixture",
+        source_kind=source_kind,
+        source_id=f"{source_kind}:fixture",
         started_at="2026-06-14T00:00:00Z",
         total_tokens=43100,
         confidence="official",
@@ -241,6 +246,24 @@ def test_usage_summary_serializes_to_plain_mock_ui_shape():
                 "cached_input_tokens": 50,
                 "reasoning_output_tokens": 3,
                 "total_tokens": 400,
+            },
+        },
+        "by_day_source": {
+            "2026-06-14": {
+                "claude_code": {
+                    "input_tokens": 200,
+                    "output_tokens": 60,
+                    "cached_input_tokens": 30,
+                    "reasoning_output_tokens": 0,
+                    "total_tokens": 260,
+                },
+                "codex": {
+                    "input_tokens": 100,
+                    "output_tokens": 40,
+                    "cached_input_tokens": 20,
+                    "reasoning_output_tokens": 3,
+                    "total_tokens": 140,
+                },
             },
         },
         "rolling_7d": {

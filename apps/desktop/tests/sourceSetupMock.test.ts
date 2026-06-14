@@ -41,12 +41,12 @@ const githubCopilot = explicitRootMockRows.find((row) => row.sourceKind === "git
 
 assert(codex?.state === "Selected (mock)", "Codex should show label-only selected mock state");
 assert(codex.displayValue === "Selected, path hidden", "Codex should hide the selected root path");
-assert(codex.pathPolicy === "no_path_stored", "Codex mock state must not store a path");
+assert(codex.pathPolicy === "no_path_stored", "Codex mock state must hide path display");
 assert(codex.rootReadiness === "label_only", "Codex label-only state should not count as a real root");
 assert(codex.nextStep === "Needs explicit root", "Codex selected mock label should still need setup");
 assert(claudeCode?.state === "Not selected", "Claude Code should still require explicit setup");
 assert(claudeCode.displayValue === "No root selected", "Claude Code should not display a path placeholder");
-assert(claudeCode.pathPolicy === "no_path_stored", "Claude Code mock state must not store a path");
+assert(claudeCode.pathPolicy === "no_path_stored", "Claude Code mock state must hide path display");
 assert(
   claudeCode.rootReadiness === "missing_explicit_root",
   "Claude Code should still be missing an explicit root"
@@ -67,7 +67,7 @@ assert(
 );
 assert(githubCopilot.displayValue === "Official report", "Copilot should show report-only state");
 assert(githubCopilot.nextStep === "Use official report", "Copilot should guide official report usage");
-assert(pathPolicyLabels.no_path_stored === "No path stored", "explicit roots should show no path storage");
+assert(pathPolicyLabels.no_path_stored === "Path hidden", "explicit roots should keep root values hidden");
 assert(pathPolicyLabels.no_local_parser === "No local parser", "status-only tools should not imply parser maturity");
 assert(pathPolicyLabels.official_report_only === "Official report", "Copilot should stay report-only");
 
@@ -139,6 +139,7 @@ assert(
   selectedClaudeCode.nextStep === "Ready for gated refresh",
   "selected roots should move only to gated refresh readiness"
 );
+assert(selectedCodex.detail === "Hidden root selected", "selected root details should stay path-free");
 
 const selectedReadiness = getManualRefreshReadiness(selectedRows);
 assertDeepEqual(selectedReadiness.missingExplicitRoots, []);

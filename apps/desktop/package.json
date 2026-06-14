@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc",
-    "test:commands": "tsc -p tsconfig.command-tests.json && node .tmp-command-tests/tests/refreshSourcesManualArgs.test.js && node .tmp-command-tests/tests/sourceRefreshSummary.test.js && node .tmp-command-tests/tests/refreshSourcesManualInvoker.test.js && node .tmp-command-tests/tests/sourceSetupMock.test.js && node .tmp-command-tests/tests/dashboardSummary.test.js",
-    "build": "tsc && vite build .",
+    "test:commands": "tsc -p tsconfig.command-tests.json && node .tmp-command-tests/tests/refreshSourcesManualArgs.test.js && node .tmp-command-tests/tests/sourceRefreshSummary.test.js && node .tmp-command-tests/tests/refreshSourcesManualInvoker.test.js && node .tmp-command-tests/tests/sourceRootPreferences.test.js && node .tmp-command-tests/tests/sourceSetupMock.test.js && node .tmp-command-tests/tests/dashboardSummary.test.js",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "cargo tauri"
   },

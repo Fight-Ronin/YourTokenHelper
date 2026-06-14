@@ -38,6 +38,13 @@ def usage_summary_to_dict(summary: UsageSummary) -> dict[str, Any]:
             day: token_totals_to_dict(totals)
             for day, totals in sorted(summary.by_day.items())
         },
+        "by_day_source": {
+            day: {
+                source_kind: token_totals_to_dict(totals)
+                for source_kind, totals in sorted(source_totals.items())
+            }
+            for day, source_totals in sorted(summary.by_day_source.items())
+        },
         "rolling_7d": rolling_window_to_dict(summary.rolling_7d),
     }
 
