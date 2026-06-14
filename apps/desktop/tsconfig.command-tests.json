@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": ".tmp-command-tests",
+    "rootDir": "."
+  },
+  "include": [
+    "src/commands/refreshSourcesManualArgs.ts",
+    "src/commands/refreshSourcesManualInvoker.ts",
+    "src/commands/sourceRefreshSummary.ts",
+    "src/data/dashboard-summary.ts",
+    "src/data/source-setup.mock.ts",
+    "tests/dashboardSummary.test.ts",
+    "tests/refreshSourcesManualArgs.test.ts",
+    "tests/refreshSourcesManualInvoker.test.ts",
+    "tests/sourceSetupMock.test.ts",
+    "tests/sourceRefreshSummary.test.ts"
+  ]
+}

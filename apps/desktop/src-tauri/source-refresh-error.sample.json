@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_refresh_request",
+    "field": "end_day_utc",
+    "message": "end_day_utc must be YYYY-MM-DD"
+  }
+}

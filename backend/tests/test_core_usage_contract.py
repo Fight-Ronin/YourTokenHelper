@@ -1,6 +1,13 @@
 import pytest
 
-from backend.core import ContractError, UsageEvent, aggregate_usage
+from backend.core import (
+    AllowanceWindow,
+    ContractError,
+    UsageEvent,
+    aggregate_usage,
+    allowance_window_to_dict,
+    usage_summary_to_dict,
+)
 
 
 def test_usage_event_normalizes_utc_timestamp_and_preserves_missing_optional_data():
@@ -103,3 +110,172 @@ def test_openai_api_cost_is_secondary_source_without_required_cost_totaling():
     assert event.cost_usd == 1.03
     assert event.api_key_id == "api-key_hash"
     assert aggregate_usage([event]).totals.total_tokens == 43100
+
+
+def test_allowance_window_preserves_api_backed_remaining_and_reset_state():
+    window = AllowanceWindow(
+        source_kind="codex",
+        source_id="codex:fixture",
+        status="api_backed",
+        unit="tokens",
+        window_start="2026-06-14T00:00:00+08:00",
+        window_end="2026-06-21T00:00:00+08:00",
+        reset_at="2026-06-21T00:00:00+08:00",
+        limit_amount=100000,
+        used_amount=25000,
+        remaining_amount=75000,
+    )
+
+    assert window.window_start == "2026-06-13T16:00:00Z"
+    assert window.window_end == "2026-06-20T16:00:00Z"
+    assert window.reset_at == "2026-06-20T16:00:00Z"
+    assert window.remaining_amount == 75000
+
+
+def test_allowance_window_can_represent_manual_or_derived_data_without_exactness_loss():
+    manual = AllowanceWindow(
+        source_kind="claude_code",
+        source_id="claude_code:fixture",
+        status="manual",
+        unit="credits",
+        used_amount=12.5,
+        remaining_amount=37.5,
+        note="Entered by the user.",
+    )
+    derived = AllowanceWindow(
+        source_kind="github_copilot",
+        source_id="github_copilot:fixture",
+        status="derived",
+        unit="requests",
+        used_amount=20,
+        remaining_amount=80,
+    )
+
+    assert manual.status == "manual"
+    assert manual.unit == "credits"
+    assert derived.status == "derived"
+    assert derived.unit == "requests"
+
+
+def test_unavailable_allowance_does_not_accept_fake_remaining_or_reset_data():
+    unavailable = AllowanceWindow(
+        source_kind="cursor",
+        source_id="cursor:fixture",
+        status="unavailable",
+        unit="unknown",
+        used_amount=0,
+        note="No local allowance source observed.",
+    )
+
+    assert unavailable.remaining_amount is None
+    assert unavailable.reset_at is None
+
+    with pytest.raises(ContractError):
+        AllowanceWindow(
+            source_kind="cursor",
+            source_id="cursor:fixture",
+            status="unavailable",
+            unit="unknown",
+            remaining_amount=0,
+        )
+
+
+def test_usage_summary_serializes_to_plain_mock_ui_shape():
+    summary = aggregate_usage(
+        [
+            UsageEvent(
+                source_kind="codex",
+                source_id="codex:fixture",
+                started_at="2026-06-14T02:00:00Z",
+                input_tokens=100,
+                output_tokens=40,
+                cached_input_tokens=20,
+                reasoning_output_tokens=3,
+                total_tokens=140,
+                confidence="local_exact",
+            ),
+            UsageEvent(
+                source_kind="claude_code",
+                source_id="claude_code:fixture",
+                started_at="2026-06-14T03:00:00Z",
+                input_tokens=200,
+                output_tokens=60,
+                cached_input_tokens=30,
+                total_tokens=260,
+                confidence="local_exact",
+            ),
+        ]
+    )
+
+    payload = usage_summary_to_dict(summary)
+
+    assert payload == {
+        "event_count": 2,
+        "totals": {
+            "input_tokens": 300,
+            "output_tokens": 100,
+            "cached_input_tokens": 50,
+            "reasoning_output_tokens": 3,
+            "total_tokens": 400,
+        },
+        "by_source": {
+            "claude_code": {
+                "input_tokens": 200,
+                "output_tokens": 60,
+                "cached_input_tokens": 30,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 260,
+            },
+            "codex": {
+                "input_tokens": 100,
+                "output_tokens": 40,
+                "cached_input_tokens": 20,
+                "reasoning_output_tokens": 3,
+                "total_tokens": 140,
+            },
+        },
+        "by_day": {
+            "2026-06-14": {
+                "input_tokens": 300,
+                "output_tokens": 100,
+                "cached_input_tokens": 50,
+                "reasoning_output_tokens": 3,
+                "total_tokens": 400,
+            },
+        },
+        "rolling_7d": {
+            "window_start": "2026-06-08",
+            "window_end": "2026-06-14",
+            "totals": {
+                "input_tokens": 300,
+                "output_tokens": 100,
+                "cached_input_tokens": 50,
+                "reasoning_output_tokens": 3,
+                "total_tokens": 400,
+            },
+        },
+    }
+
+
+def test_allowance_window_serialization_omits_unavailable_fake_remaining_data():
+    payload = allowance_window_to_dict(
+        AllowanceWindow(
+            source_kind="cursor",
+            source_id="cursor:fixture",
+            status="unavailable",
+            unit="unknown",
+            used_amount=0,
+            note="No local allowance source observed.",
+        )
+    )
+
+    assert payload == {
+        "source_kind": "cursor",
+        "source_id": "cursor:fixture",
+        "status": "unavailable",
+        "unit": "unknown",
+        "used_amount": 0,
+        "note": "No local allowance source observed.",
+    }
+    assert "remaining_amount" not in payload
+    assert "reset_at" not in payload

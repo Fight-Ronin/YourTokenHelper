@@ -22,7 +22,7 @@ This PR should prove that Codex, Claude Code, Cursor, Gemini CLI, GitHub Copilot
 
 Required fields:
 
-- `source_kind`: `codex`, `claude_code`, `cursor`, `gemini_cli`, `github_copilot`, or later `openai_api`.
+- `source_kind`: `codex`, `claude_code`, `cursor`, `gemini_cli`, `github_copilot`, or secondary `openai_api_cost`.
 - `source_id`: stable local source identifier.
 - `started_at`: UTC ISO-8601 timestamp.
 - `total_tokens`.
@@ -64,6 +64,41 @@ Token dimensions:
 
 Cached tokens are a parallel dimension and should not be added to `total_tokens` when the source already provides an explicit total.
 
+Backend summaries exposed to the desktop mock UI should use plain JSON-ready dictionaries with:
+
+- `event_count`.
+- `totals`.
+- `by_source`.
+- `by_day`.
+- `rolling_7d`.
+
+This keeps PR3 mock data aligned to the backend contract without connecting the desktop shell to experimental parser files.
+
+The PR3 mock UI can start from `backend/fixtures/mock_v1_summary.json`. That fixture is synthetic aggregate data generated from backend core contracts; it is not parsed from real local logs.
+
+## Allowance Windows
+
+Allowance and remaining-usage data must be represented separately from token events because some sources do not expose an exact allowance.
+
+Required fields:
+
+- `source_kind`.
+- `source_id`.
+- `status`: `api_backed`, `manual`, `derived`, or `unavailable`.
+- `unit`: `tokens`, `credits`, `usd`, `requests`, or `unknown`.
+
+Optional fields:
+
+- `window_start`.
+- `window_end`.
+- `reset_at`.
+- `limit_amount`.
+- `used_amount`.
+- `remaining_amount`.
+- `note`.
+
+When `status` is `unavailable`, `remaining_amount`, `limit_amount`, and `reset_at` must be empty. This prevents the app from silently implying exact remaining usage when the source has no allowance data.
+
 ## Current Fixture Coverage
 
 | Source | Fixture status | Real local status from PR 1b | PR 2 handling |
@@ -80,6 +115,8 @@ Cached tokens are a parallel dimension and should not be added to `total_tokens`
 Run:
 
 ```powershell
+python -m pytest backend/tests
+python -m py_compile backend/fixtures/mock_summary.py
 python -m py_compile experiments/probes/usage_event_parser.py
 python experiments/probes/usage_event_parser.py --fixture-root experiments/fixtures/local_sources --output .probe-output/usage-events-fixture-summary.redacted.json
 ```

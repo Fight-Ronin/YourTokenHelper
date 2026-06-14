@@ -1,0 +1,133 @@
+{
+  "refresh_results": [
+    {
+      "source_kind": "codex",
+      "source_id": "codex:local_jsonl",
+      "status": "ready",
+      "confidence": "local_exact",
+      "events_seen": 2,
+      "sync_run_id": 1,
+      "message": "Aggregate JSONL usage files are available."
+    },
+    {
+      "source_kind": "claude_code",
+      "source_id": "claude_code:local_jsonl",
+      "status": "ready",
+      "confidence": "local_exact",
+      "events_seen": 2,
+      "sync_run_id": 2,
+      "message": "Aggregate JSONL usage files are available."
+    },
+    {
+      "source_kind": "cursor",
+      "source_id": "cursor:manual",
+      "status": "manual_only",
+      "confidence": "manual",
+      "events_seen": 0,
+      "sync_run_id": 3,
+      "message": "Cursor remains manual until a stable aggregate source is verified."
+    },
+    {
+      "source_kind": "gemini_cli",
+      "source_id": "gemini_cli:setup",
+      "status": "setup_required",
+      "confidence": "unavailable",
+      "events_seen": 0,
+      "sync_run_id": 4,
+      "message": "Gemini CLI needs explicit telemetry or export setup before sync."
+    },
+    {
+      "source_kind": "github_copilot",
+      "source_id": "github_copilot:official_report",
+      "status": "official_report",
+      "confidence": "official",
+      "events_seen": 0,
+      "sync_run_id": 5,
+      "message": "Use official report import; personal local token parsing is not ready."
+    }
+  ],
+  "storage_summary": {
+    "schema_version": 1,
+    "generated_from": "backend.sources.refresh",
+    "privacy": {
+      "synthetic": false,
+      "stores_prompt_content": false,
+      "stores_response_content": false,
+      "stores_tool_output": false
+    },
+    "summary": {
+      "event_count": 4,
+      "totals": {
+        "input_tokens": 6200,
+        "output_tokens": 1330,
+        "cached_input_tokens": 1600,
+        "reasoning_output_tokens": 40,
+        "total_tokens": 7570
+      },
+      "by_source": {
+        "codex": {
+          "input_tokens": 2100,
+          "output_tokens": 400,
+          "cached_input_tokens": 550,
+          "reasoning_output_tokens": 40,
+          "total_tokens": 2540
+        },
+        "claude_code": {
+          "input_tokens": 4100,
+          "output_tokens": 930,
+          "cached_input_tokens": 1050,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 5030
+        }
+      },
+      "by_day": {
+        "2026-06-14": {
+          "input_tokens": 6200,
+          "output_tokens": 1330,
+          "cached_input_tokens": 1600,
+          "reasoning_output_tokens": 40,
+          "total_tokens": 7570
+        }
+      },
+      "rolling_7d": {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "totals": {
+          "input_tokens": 6200,
+          "output_tokens": 1330,
+          "cached_input_tokens": 1600,
+          "reasoning_output_tokens": 40,
+          "total_tokens": 7570
+        }
+      }
+    },
+    "allowance_windows": [],
+    "source_states": [
+      {
+        "source_kind": "codex",
+        "status": "ready",
+        "confidence": "local_exact"
+      },
+      {
+        "source_kind": "claude_code",
+        "status": "ready",
+        "confidence": "local_exact"
+      },
+      {
+        "source_kind": "cursor",
+        "status": "manual_only",
+        "confidence": "manual"
+      },
+      {
+        "source_kind": "gemini_cli",
+        "status": "setup_required",
+        "confidence": "unavailable"
+      },
+      {
+        "source_kind": "github_copilot",
+        "status": "official_report",
+        "confidence": "official"
+      }
+    ]
+  }
+}

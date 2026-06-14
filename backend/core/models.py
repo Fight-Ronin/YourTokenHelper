@@ -15,6 +15,8 @@ SOURCE_KINDS = (
     "openai_api_cost",
 )
 CONFIDENCE_VALUES = ("official", "local_exact", "local_estimated", "manual", "unavailable")
+ALLOWANCE_STATUSES = ("api_backed", "manual", "derived", "unavailable")
+ALLOWANCE_UNITS = ("tokens", "credits", "usd", "requests", "unknown")
 
 
 class ContractError(ValueError):
@@ -97,6 +99,44 @@ class UsageEvent:
         )
 
 
+@dataclass(frozen=True)
+class AllowanceWindow:
+    source_kind: str
+    source_id: str
+    status: str
+    unit: str = "tokens"
+    window_start: str | None = None
+    window_end: str | None = None
+    reset_at: str | None = None
+    limit_amount: float | None = None
+    used_amount: float | None = None
+    remaining_amount: float | None = None
+    note: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.source_kind not in SOURCE_KINDS:
+            raise ContractError(f"Unknown source_kind: {self.source_kind}")
+        if not self.source_id.strip():
+            raise ContractError("source_id is required")
+        if self.status not in ALLOWANCE_STATUSES:
+            raise ContractError(f"Unknown allowance status: {self.status}")
+        if self.unit not in ALLOWANCE_UNITS:
+            raise ContractError(f"Unknown allowance unit: {self.unit}")
+
+        for field_name in ("window_start", "window_end", "reset_at"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, normalize_utc_timestamp(value))
+        for field_name in ("limit_amount", "used_amount", "remaining_amount"):
+            value = getattr(self, field_name)
+            if value is not None:
+                validate_non_negative_number(field_name, value)
+        if self.status == "unavailable":
+            for field_name in ("limit_amount", "remaining_amount", "reset_at"):
+                if getattr(self, field_name) is not None:
+                    raise ContractError(f"{field_name} must be empty when allowance is unavailable")
+
+
 def normalize_utc_timestamp(value: str) -> str:
     text = value.strip()
     if not text:
@@ -115,5 +155,12 @@ def normalize_utc_timestamp(value: str) -> str:
 def validate_non_negative_int(field_name: str, value: int) -> None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ContractError(f"{field_name} must be an integer")
+    if value < 0:
+        raise ContractError(f"{field_name} must be non-negative")
+
+
+def validate_non_negative_number(field_name: str, value: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ContractError(f"{field_name} must be a number")
     if value < 0:
         raise ContractError(f"{field_name} must be non-negative")
