@@ -56,6 +56,11 @@ uses the saved roots while the app is open at a fixed 15-minute interval.
 The Sources view imports the production command client behind that gate. It
 names `refresh_sources_manual`, tracks running/success/failure states, and keeps
 the action disabled in the empty-root default state.
+The Sources view also exposes a manual allowance form for primary usage
+sources. It accepts only source, unit, numeric allowance fields, and reset time;
+successful saves call `save_manual_allowance_window` and promote the returned
+storage summary into Daily and Weekly without displaying paths or raw source
+ids.
 The header `Refresh` shortcut reuses the same command draft and running state,
 but requires saved roots so it cannot run from transient unsaved input.
 That panel is driven by a typed `manualRefreshMockState` with `canRun: false`,
@@ -95,9 +100,29 @@ avoids reusing the mock dollar estimate after live local refresh.
 The Source Usage panels then filter that completed map through a tested display
 helper: sources with tokens are shown, saved Codex/Claude roots stay visible,
 and unconfigured zero-token sources do not take bar space.
-The API Costs route is still secondary, but its provider table now reserves
-separate unavailable/planned rows for OpenAI, Claude, Gemini, and DeepSeek
-instead of implying that OpenAI is the only future cost source.
+The API Costs route is still secondary, but it now reads stored local
+`cost_summary` aggregates when OpenAI Admin cost records exist. Missing cost
+records render as explicit no-data states. OpenAI live Admin usage/cost sync is
+available through the explicit `Sync billing` action after an OpenAI API cost
+credential is saved; personal or non-admin keys are expected to return explicit
+permission/invalid states instead of fake zero-cost rows.
+The provider rows use the shared API cost provider status contract:
+OpenAI is `not_configured` until an explicit import or credential path exists,
+while Claude, Gemini, and DeepSeek stay `needs_verified_adapter` until official
+billing adapters have deterministic fixture coverage.
+The API Costs route also exposes provider credential controls backed by Tauri
+commands `load_api_provider_credentials`, `save_api_provider_credential`, and
+`remove_api_provider_credential`. Credentials are written to the app-data
+`api-provider-credentials.json` file only as Windows DPAPI-protected blobs;
+returned UI payloads contain provider ids, status, adapter verification, and
+credential presence only. They do not return plaintext keys, local paths, raw
+provider responses, or plaintext billing payloads. The separate
+`sync_api_provider_billing` command accepts only provider id and date on the UI
+boundary, injects the decrypted OpenAI key into the backend process environment,
+promotes the returned aggregate `storage_summary` into the dashboard, and shows
+redacted Usage API / Costs API diagnostics as status labels only.
+Claude, Gemini, and DeepSeek remain visible but disabled as
+`needs_verified_adapter` until official billing/export adapters are verified.
 The Sources page also keeps the returned `refresh_results` in memory for the
 current session and renders a `Last Refresh` table with only aggregate sync
 metadata: source, status, confidence, event count, and sync-run id. Event count

@@ -12,8 +12,10 @@ from backend.fixtures.mock_summary import (
     mock_source_states,
 )
 from backend.storage import (
+    CostBucketRecord,
     build_storage_summary_payload,
     initialize_schema,
+    record_cost_records,
     record_usage_events,
     upsert_source,
 )
@@ -53,6 +55,7 @@ def test_storage_payload_matches_mock_summary_shape_from_seed_data():
         "events_seen": 0,
     }
     assert payload["summary"] == expected["summary"]
+    assert payload["cost_summary"] == expected["cost_summary"]
     assert payload["allowance_windows"] == expected["allowance_windows"]
     assert payload["source_states"] == expected["source_states"]
 
@@ -64,6 +67,7 @@ def test_storage_seed_fixture_builds_the_same_payload_shape():
     assert payload["generated_from"] == "backend.fixtures.storage_seed_summary"
     assert payload["refresh_state"]["last_status"] == "never_refreshed"
     assert payload["summary"] == expected["summary"]
+    assert payload["cost_summary"] == expected["cost_summary"]
     assert payload["allowance_windows"] == expected["allowance_windows"]
     assert payload["source_states"] == expected["source_states"]
 
@@ -146,3 +150,52 @@ def test_storage_payload_preserves_unavailable_allowance_without_fake_remaining(
         assert "remaining_amount" not in window
         assert "limit_amount" not in window
         assert "reset_at" not in window
+
+
+def test_storage_payload_reports_empty_cost_summary_explicitly():
+    connection = memory_connection()
+
+    payload = build_storage_summary_payload(connection, end_day_utc="2026-06-14")
+
+    assert payload["cost_summary"] == {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "total_usd": None,
+        "by_source": {},
+    }
+
+
+def test_storage_payload_reports_cost_summary_without_raw_ids():
+    connection = memory_connection()
+    record_cost_records(
+        connection,
+        [
+            CostBucketRecord(
+                day_utc="2026-06-14",
+                source_kind="openai_api_cost",
+                source_id="openai_api_cost:admin_api",
+                project_id="project_hash",
+                api_key_id="key_hash",
+                cost_usd=1.25,
+                event_count=3,
+            )
+        ],
+    )
+
+    payload = build_storage_summary_payload(connection, end_day_utc="2026-06-14")
+    text = json.dumps(payload, sort_keys=True)
+
+    assert payload["cost_summary"] == {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "total_usd": 1.25,
+        "by_source": {
+            "openai_api_cost": {
+                "total_usd": 1.25,
+                "bucket_count": 1,
+                "event_count": 3,
+            },
+        },
+    }
+    assert "project_hash" not in text
+    assert "key_hash" not in text

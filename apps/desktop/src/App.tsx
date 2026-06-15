@@ -1,20 +1,34 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  AlertTriangle,
   BarChart3,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
-  Database,
-  Gauge,
   RefreshCw,
+  Save,
   Settings,
   TableProperties,
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { loadStartupStorageSummary } from "./commands/loadStorageSummaryClient.js";
+import {
+  defaultApiProviderCredentialStatuses,
+  apiProviderCredentialStatusFromPayload,
+  loadApiProviderCredentials,
+  removeApiProviderCredential as removeApiProviderCredentialCommand,
+  saveApiProviderCredential as saveApiProviderCredentialCommand
+} from "./commands/apiProviderCredentials.js";
+import {
+  syncApiProviderBilling,
+  type ApiProviderEndpointStatusesPayload
+} from "./commands/apiProviderBillingSync.js";
+import {
+  defaultManualAllowanceEndDayUtc,
+  invokeSaveManualAllowance,
+  isManualAllowanceSuccessPayload
+} from "./commands/manualAllowance.js";
 import { invokeRefreshSourcesManual } from "./commands/refreshSourcesManualClient.js";
 import { isRefreshCommandErrorPayload, manualRefreshEndDayUtc } from "./commands/sourceRefreshSummary.js";
 import {
@@ -48,6 +62,12 @@ import {
   type StartupStorageReadState
 } from "./data/dashboard-summary.js";
 import {
+  apiCostProviderIds,
+  apiCostProviderStatusFor,
+  apiCostProviderStatusLabel,
+  type ApiCostProviderStatus
+} from "./data/api-cost-providers.js";
+import {
   applyExplicitRootSetupAction,
   buildManualRefreshDraftFromHiddenRoots,
   manualRefreshBridgeLabel,
@@ -80,6 +100,34 @@ import type {
 const initialPayload = buildDashboardSummaryFromRefresh(mockSummary as RefreshStorageSummaryPayload);
 
 type ViewId = "daily" | "weekly" | "sources" | "api_costs" | "settings";
+type ManualAllowanceFormState = {
+  sourceKind: SourceKind;
+  unit: AllowanceWindow["unit"];
+  limitAmount: string;
+  remainingAmount: string;
+  resetAt: string;
+};
+type ManualAllowanceSaveState =
+  | { phase: "idle" }
+  | { phase: "saving" }
+  | { phase: "succeeded"; message: string }
+  | { phase: "failed"; message: string };
+type ApiProviderCredentialFormState = {
+  providerId: ApiCostSourceKind;
+  apiKey: string;
+};
+type ApiProviderCredentialRunState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "loaded" }
+  | { phase: "saving" }
+  | { phase: "saved"; message: string }
+  | { phase: "syncing" }
+  | { phase: "synced"; message: string }
+  | { phase: "removing" }
+  | { phase: "removed"; message: string }
+  | { phase: "failed"; message: string };
+type ApiProviderEndpointDiagnostics = Partial<Record<ApiCostSourceKind, ApiProviderEndpointStatusesPayload>>;
 
 const sourceLabels: Record<SourceKind, string> = {
   codex: "Codex",
@@ -107,32 +155,20 @@ const sourceColors: Record<SourceKind, string> = {
 
 type ApiCostProvider = {
   sourceKind: ApiCostSourceKind;
-  status: "Secondary source" | "Planned";
   detail: string;
 };
 
-const apiCostProviders: readonly ApiCostProvider[] = [
-  {
-    sourceKind: "openai_api_cost",
-    status: "Secondary source",
-    detail: "Admin/API cost sync is reserved for PR6"
-  },
-  {
-    sourceKind: "claude_api_cost",
-    status: "Planned",
-    detail: "Provider billing export or official API required"
-  },
-  {
-    sourceKind: "gemini_api_cost",
-    status: "Planned",
-    detail: "Provider billing export or official API required"
-  },
-  {
-    sourceKind: "deepseek_api_cost",
-    status: "Planned",
-    detail: "Provider billing export or official API required"
-  }
-];
+const apiCostProviderDetails: Record<ApiCostSourceKind, string> = {
+  openai_api_cost: "Stored Admin usage/cost imports are supported; live sync needs an OpenAI Admin API key",
+  claude_api_cost: "Official billing adapter still needs verification before sync is enabled",
+  gemini_api_cost: "Official billing adapter still needs verification before sync is enabled",
+  deepseek_api_cost: "Official billing adapter still needs verification before sync is enabled"
+};
+
+const apiCostProviders: readonly ApiCostProvider[] = apiCostProviderIds.map((sourceKind) => ({
+  sourceKind,
+  detail: apiCostProviderDetails[sourceKind]
+}));
 
 const navItems: Array<{ id: ViewId; label: string; icon: LucideIcon; secondary?: boolean }> = [
   { id: "daily", label: "Daily", icon: CalendarDays },
@@ -141,6 +177,25 @@ const navItems: Array<{ id: ViewId; label: string; icon: LucideIcon; secondary?:
   { id: "api_costs", label: "API Costs", icon: CircleDollarSign, secondary: true },
   { id: "settings", label: "Settings", icon: Settings }
 ];
+const manualAllowanceSourceKinds: readonly SourceKind[] = [
+  "codex",
+  "claude_code",
+  "cursor",
+  "gemini_cli",
+  "github_copilot"
+];
+const manualAllowanceUnits: readonly AllowanceWindow["unit"][] = ["tokens", "credits", "usd", "requests"];
+const defaultManualAllowanceFormState: ManualAllowanceFormState = {
+  sourceKind: "codex",
+  unit: "tokens",
+  limitAmount: "",
+  remainingAmount: "",
+  resetAt: ""
+};
+const defaultApiProviderCredentialFormState: ApiProviderCredentialFormState = {
+  providerId: "openai_api_cost",
+  apiKey: ""
+};
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewId>("daily");
@@ -154,6 +209,18 @@ export function App() {
   const [sourceRootPersistenceState, setSourceRootPersistenceState] =
     useState<SourceRootPersistenceState>({ phase: "idle" });
   const [manualRefreshRunState, setManualRefreshRunState] = useState<ManualRefreshRunState>({ phase: "idle" });
+  const [manualAllowanceFormState, setManualAllowanceFormState] =
+    useState<ManualAllowanceFormState>(defaultManualAllowanceFormState);
+  const [manualAllowanceSaveState, setManualAllowanceSaveState] =
+    useState<ManualAllowanceSaveState>({ phase: "idle" });
+  const [apiProviderCredentialStatuses, setApiProviderCredentialStatuses] =
+    useState<ApiCostProviderStatus[]>(defaultApiProviderCredentialStatuses);
+  const [apiProviderCredentialFormState, setApiProviderCredentialFormState] =
+    useState<ApiProviderCredentialFormState>(defaultApiProviderCredentialFormState);
+  const [apiProviderCredentialRunState, setApiProviderCredentialRunState] =
+    useState<ApiProviderCredentialRunState>({ phase: "idle" });
+  const [apiProviderEndpointDiagnostics, setApiProviderEndpointDiagnostics] =
+    useState<ApiProviderEndpointDiagnostics>({});
   const view = navItems.find((item) => item.id === activeView) ?? navItems[0];
   const manualRefreshBoundary = buildManualRefreshDraftFromHiddenRoots(
     {
@@ -216,6 +283,31 @@ export function App() {
     }
 
     void loadPersistedRoots();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadCredentialStatuses() {
+      setApiProviderCredentialRunState({ phase: "loading" });
+      const outcome = await loadApiProviderCredentials();
+      if (isCancelled) {
+        return;
+      }
+      if (outcome.ok) {
+        setApiProviderCredentialStatuses(outcome.statuses);
+        setApiProviderCredentialRunState({ phase: "loaded" });
+        return;
+      }
+      setApiProviderCredentialStatuses(defaultApiProviderCredentialStatuses());
+      setApiProviderCredentialRunState({ phase: "failed", message: outcome.error.error.message });
+    }
+
+    void loadCredentialStatuses();
 
     return () => {
       isCancelled = true;
@@ -354,6 +446,132 @@ export function App() {
     await runRefreshWithDraft(manualRefreshBoundary.draft);
   }
 
+  function updateManualAllowanceDraft(patch: Partial<ManualAllowanceFormState>) {
+    setManualAllowanceFormState((state) => ({ ...state, ...patch }));
+    setManualAllowanceSaveState((state) =>
+      state.phase === "succeeded" || state.phase === "failed" ? { phase: "idle" } : state
+    );
+  }
+
+  function updateApiProviderCredentialDraft(patch: Partial<ApiProviderCredentialFormState>) {
+    setApiProviderCredentialFormState((state) => ({ ...state, ...patch }));
+    setApiProviderCredentialRunState((state) =>
+      state.phase === "saved" || state.phase === "removed" || state.phase === "failed" ? { phase: "idle" } : state
+    );
+  }
+
+  async function saveApiProviderCredential() {
+    const providerId = apiProviderCredentialFormState.providerId;
+    setApiProviderCredentialRunState({ phase: "saving" });
+    const outcome = await saveApiProviderCredentialCommand(apiProviderCredentialFormState);
+    if (!outcome.ok) {
+      setApiProviderCredentialRunState({ phase: "failed", message: outcome.error.error.message });
+      return;
+    }
+    setApiProviderCredentialStatuses(outcome.statuses);
+    clearApiProviderEndpointDiagnostics(providerId);
+    setApiProviderCredentialFormState((state) => ({ ...state, apiKey: "" }));
+    setApiProviderCredentialRunState({
+      phase: "saved",
+      message: `Saved ${sourceLabels[providerId]} credential`
+    });
+  }
+
+  async function removeApiProviderCredential() {
+    const providerId = apiProviderCredentialFormState.providerId;
+    setApiProviderCredentialRunState({ phase: "removing" });
+    const outcome = await removeApiProviderCredentialCommand(providerId);
+    if (!outcome.ok) {
+      setApiProviderCredentialRunState({ phase: "failed", message: outcome.error.error.message });
+      return;
+    }
+    setApiProviderCredentialStatuses(outcome.statuses);
+    clearApiProviderEndpointDiagnostics(providerId);
+    setApiProviderCredentialFormState((state) => ({ ...state, apiKey: "" }));
+    setApiProviderCredentialRunState({
+      phase: "removed",
+      message: `Removed ${sourceLabels[providerId]} credential`
+    });
+  }
+
+  async function syncApiProviderBillingNow() {
+    const providerId = apiProviderCredentialFormState.providerId;
+    setApiProviderCredentialRunState({ phase: "syncing" });
+    const outcome = await syncApiProviderBilling({
+      providerId,
+      endDayUtc: manualRefreshEndDayUtc()
+    });
+    if (!outcome.ok) {
+      setApiProviderCredentialRunState({ phase: "failed", message: outcome.error.error.message });
+      return;
+    }
+
+    setDashboardPayload(buildDashboardSummaryFromRefresh(outcome.result.storage_summary));
+    setDashboardDataMode("local_refresh");
+    setStartupStorageReadState({ phase: "loaded" });
+    const providerStatus = outcome.result.provider_status;
+    const normalizedProviderStatus = providerStatus
+      ? apiProviderCredentialStatusFromPayload(providerStatus)
+      : undefined;
+    if (normalizedProviderStatus) {
+      setApiProviderCredentialStatuses((statuses) =>
+        replaceApiProviderCredentialStatus(statuses, normalizedProviderStatus)
+      );
+    }
+    if (outcome.result.endpoint_statuses) {
+      setApiProviderEndpointDiagnostics((statuses) => ({
+        ...statuses,
+        [providerId]: outcome.result.endpoint_statuses
+      }));
+    }
+    setApiProviderCredentialRunState({
+      phase:
+        normalizedProviderStatus === undefined || normalizedProviderStatus.status === "ready"
+          ? "synced"
+          : "failed",
+      message: apiProviderBillingSyncMessage(
+        outcome.result.sync_result.events_seen,
+        normalizedProviderStatus
+      )
+    });
+  }
+
+  function clearApiProviderEndpointDiagnostics(providerId: ApiCostSourceKind) {
+    setApiProviderEndpointDiagnostics((statuses) => {
+      const next = { ...statuses };
+      delete next[providerId];
+      return next;
+    });
+  }
+
+  async function saveManualAllowance() {
+    setManualAllowanceSaveState({ phase: "saving" });
+    const outcome = await invokeSaveManualAllowance({
+      endDayUtc: defaultManualAllowanceEndDayUtc(),
+      sourceKind: manualAllowanceFormState.sourceKind,
+      unit: manualAllowanceFormState.unit,
+      limitAmount: Number(manualAllowanceFormState.limitAmount),
+      remainingAmount: optionalNumberInput(manualAllowanceFormState.remainingAmount),
+      resetAt: optionalTextInput(manualAllowanceFormState.resetAt)
+    });
+    if (!outcome.ok) {
+      setManualAllowanceSaveState({ phase: "failed", message: outcome.error.error.message });
+      return;
+    }
+    if (!isManualAllowanceSuccessPayload(outcome.result)) {
+      setManualAllowanceSaveState({ phase: "failed", message: outcome.result.error.message });
+      return;
+    }
+
+    setDashboardPayload(buildDashboardSummaryFromRefresh(outcome.result.storage_summary));
+    setDashboardDataMode("local_refresh");
+    setStartupStorageReadState({ phase: "loaded" });
+    setManualAllowanceSaveState({
+      phase: "succeeded",
+      message: `Saved ${sourceLabels[outcome.result.allowance_window.source_kind]} allowance`
+    });
+  }
+
   const manualRefreshKey = manualRefreshBoundary.canInvoke
     ? [
         manualRefreshBoundary.draft.endDayUtc,
@@ -397,7 +615,7 @@ export function App() {
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
-          <Gauge size={20} />
+          <span className="brand-mark" aria-hidden="true" />
           <span>YourTokenHelper</span>
         </div>
         <nav className="nav-list">
@@ -446,16 +664,28 @@ export function App() {
           dashboardDataMode,
           startupStorageReadState,
           lastRefreshResults,
+          apiProviderCredentialFormState,
+          apiProviderCredentialRunState,
+          apiProviderCredentialStatuses,
+          apiProviderEndpointDiagnostics,
           manualRefreshBoundary,
           manualRefreshRunState,
+          manualAllowanceFormState,
+          manualAllowanceSaveState,
           sourceRootPersistenceState,
           sourceRootPreferences,
           rootsAreSavedForAutoRefresh,
           clearExplicitRoot,
           forgetExplicitRoots,
           handleManualRefresh,
+          removeApiProviderCredential,
+          saveManualAllowance,
+          saveApiProviderCredential,
+          syncApiProviderBillingNow,
           saveExplicitRoots,
           setAutoRefreshEnabled,
+          updateApiProviderCredentialDraft,
+          updateManualAllowanceDraft,
           updateExplicitRoot
         )}
       </main>
@@ -469,16 +699,28 @@ function renderView(
   dataMode: DashboardDataMode,
   startupStorageReadState: StartupStorageReadState,
   lastRefreshResults: readonly RefreshResult[] | null,
+  apiProviderCredentialFormState: ApiProviderCredentialFormState,
+  apiProviderCredentialRunState: ApiProviderCredentialRunState,
+  apiProviderCredentialStatuses: readonly ApiCostProviderStatus[],
+  apiProviderEndpointDiagnostics: ApiProviderEndpointDiagnostics,
   manualRefreshBoundary: ReturnType<typeof buildManualRefreshDraftFromHiddenRoots>,
   manualRefreshRunState: ManualRefreshRunState,
+  manualAllowanceFormState: ManualAllowanceFormState,
+  manualAllowanceSaveState: ManualAllowanceSaveState,
   sourceRootPersistenceState: SourceRootPersistenceState,
   sourceRootPreferences: SourceRootPreferences,
   rootsAreSavedForAutoRefresh: boolean,
   onClearRoot: (sourceKind: ExplicitRootSourceKind) => void,
   onForgetRoots: () => void,
   onManualRefresh: () => void,
+  onApiProviderCredentialRemove: () => void,
+  onManualAllowanceSave: () => void,
+  onApiProviderCredentialSave: () => void,
+  onApiProviderBillingSync: () => void,
   onSaveRoots: () => void,
   onAutoRefreshChange: (enabled: boolean) => void,
+  onApiProviderCredentialChange: (patch: Partial<ApiProviderCredentialFormState>) => void,
+  onManualAllowanceChange: (patch: Partial<ManualAllowanceFormState>) => void,
   onRootChange: (sourceKind: ExplicitRootSourceKind, root: string) => void
 ) {
   const configuredSourceKinds = configuredUsageSourceKinds(sourceRootPreferences);
@@ -491,11 +733,15 @@ function renderView(
       <SourcesView
         dataMode={dataMode}
         lastRefreshResults={lastRefreshResults}
+        manualAllowanceFormState={manualAllowanceFormState}
+        manualAllowanceSaveState={manualAllowanceSaveState}
         manualRefreshBoundary={manualRefreshBoundary}
         manualRefreshRunState={manualRefreshRunState}
         onAutoRefreshChange={onAutoRefreshChange}
         onClearRoot={onClearRoot}
         onForgetRoots={onForgetRoots}
+        onManualAllowanceChange={onManualAllowanceChange}
+        onManualAllowanceSave={onManualAllowanceSave}
         onManualRefresh={onManualRefresh}
         onRootChange={onRootChange}
         onSaveRoots={onSaveRoots}
@@ -508,7 +754,20 @@ function renderView(
     );
   }
   if (view === "api_costs") {
-    return <ApiCostsView dataMode={dataMode} payload={payload} />;
+    return (
+      <ApiCostsView
+        credentialFormState={apiProviderCredentialFormState}
+        credentialRunState={apiProviderCredentialRunState}
+        credentialStatuses={apiProviderCredentialStatuses}
+        dataMode={dataMode}
+        endpointDiagnostics={apiProviderEndpointDiagnostics}
+        onCredentialChange={onApiProviderCredentialChange}
+        onCredentialRemove={onApiProviderCredentialRemove}
+        onCredentialSave={onApiProviderCredentialSave}
+        onProviderBillingSync={onApiProviderBillingSync}
+        payload={payload}
+      />
+    );
   }
   if (view === "settings") {
     return <SettingsView payload={payload} />;
@@ -532,7 +791,13 @@ function DailyView({
 
   return (
     <>
-      <PrimaryMetricStrip dataMode={dataMode} totals={daily} remaining={remaining} windowLabel="Today" />
+      <PrimaryMetricStrip
+        costSummary={payload.cost_summary}
+        dataMode={dataMode}
+        totals={daily}
+        remaining={remaining}
+        windowLabel="Today"
+      />
 
       <section className="main-grid">
         <div className="left-stack">
@@ -578,7 +843,13 @@ function WeeklyView({
 
   return (
     <>
-      <PrimaryMetricStrip dataMode={dataMode} totals={rolling.totals} remaining={remaining} windowLabel="Rolling 7 days" />
+      <PrimaryMetricStrip
+        costSummary={payload.cost_summary}
+        dataMode={dataMode}
+        totals={rolling.totals}
+        remaining={remaining}
+        windowLabel="Rolling 7 days"
+      />
 
       <section className="main-grid">
         <div className="left-stack">
@@ -617,11 +888,15 @@ function WeeklyView({
 function SourcesView({
   dataMode,
   lastRefreshResults,
+  manualAllowanceFormState,
+  manualAllowanceSaveState,
   manualRefreshBoundary,
   manualRefreshRunState,
   onAutoRefreshChange,
   onClearRoot,
   onForgetRoots,
+  onManualAllowanceChange,
+  onManualAllowanceSave,
   onManualRefresh,
   onRootChange,
   onSaveRoots,
@@ -633,11 +908,15 @@ function SourcesView({
 }: {
   dataMode: DashboardDataMode;
   lastRefreshResults: readonly RefreshResult[] | null;
+  manualAllowanceFormState: ManualAllowanceFormState;
+  manualAllowanceSaveState: ManualAllowanceSaveState;
   manualRefreshBoundary: ReturnType<typeof buildManualRefreshDraftFromHiddenRoots>;
   manualRefreshRunState: ManualRefreshRunState;
   onAutoRefreshChange: (enabled: boolean) => void;
   onClearRoot: (sourceKind: ExplicitRootSourceKind) => void;
   onForgetRoots: () => void;
+  onManualAllowanceChange: (patch: Partial<ManualAllowanceFormState>) => void;
+  onManualAllowanceSave: () => void;
   onManualRefresh: () => void;
   onRootChange: (sourceKind: ExplicitRootSourceKind, root: string) => void;
   onSaveRoots: () => void;
@@ -672,7 +951,7 @@ function SourcesView({
                   </td>
                   <td><StatusBadge label={source.status.replace("_", " ")} /></td>
                   <td>{source.confidence.replace("_", " ")}</td>
-                  <td>{allowance ? allowance.status.replace("_", " ") : "unavailable"}</td>
+                  <td>{allowanceStatusLabel(allowance)}</td>
                 </tr>
               );
             })}
@@ -691,6 +970,15 @@ function SourcesView({
           rows={manualRefreshBoundary.rows}
           sourceRootPersistenceState={sourceRootPersistenceState}
           sourceRootPreferences={sourceRootPreferences}
+        />
+      </Panel>
+
+      <Panel title="Manual Allowance">
+        <ManualAllowanceForm
+          formState={manualAllowanceFormState}
+          onChange={onManualAllowanceChange}
+          onSave={onManualAllowanceSave}
+          saveState={manualAllowanceSaveState}
         />
       </Panel>
 
@@ -718,11 +1006,6 @@ function SourcesView({
       <Panel title="Last Refresh">
         <LastRefreshResults results={lastRefreshResults} />
       </Panel>
-
-      <div className="two-column">
-        <StatePanel icon={<Database size={18} />} title="First Launch" action="Choose sources" />
-        <StatePanel icon={<AlertTriangle size={18} />} title="No Local Sources" action="Open settings" />
-      </div>
     </section>
   );
 }
@@ -770,6 +1053,114 @@ function StartupStorageStatus({
   );
 }
 
+function ManualAllowanceForm({
+  formState,
+  onChange,
+  onSave,
+  saveState
+}: {
+  formState: ManualAllowanceFormState;
+  onChange: (patch: Partial<ManualAllowanceFormState>) => void;
+  onSave: () => void;
+  saveState: ManualAllowanceSaveState;
+}) {
+  const isSaving = saveState.phase === "saving";
+  const stateLabel = saveState.phase === "idle" ? "Not configured" : saveState.phase;
+
+  return (
+    <form
+      className="manual-allowance-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <div className="allowance-input-grid">
+        <label className="form-field">
+          <span>Source</span>
+          <select
+            className="root-input"
+            onChange={(event) => onChange({ sourceKind: event.currentTarget.value as SourceKind })}
+            value={formState.sourceKind}
+          >
+            {manualAllowanceSourceKinds.map((sourceKind) => (
+              <option key={sourceKind} value={sourceKind}>
+                {sourceLabels[sourceKind]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field">
+          <span>Unit</span>
+          <select
+            className="root-input"
+            onChange={(event) => onChange({ unit: event.currentTarget.value as AllowanceWindow["unit"] })}
+            value={formState.unit}
+          >
+            {manualAllowanceUnits.map((unit) => (
+              <option key={unit} value={unit}>
+                {allowanceUnitLabel(unit)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field">
+          <span>Limit</span>
+          <input
+            className="root-input"
+            inputMode="decimal"
+            min="0"
+            onChange={(event) => onChange({ limitAmount: event.currentTarget.value })}
+            placeholder="100000"
+            type="number"
+            value={formState.limitAmount}
+          />
+        </label>
+        <label className="form-field">
+          <span>Remaining</span>
+          <input
+            className="root-input"
+            inputMode="decimal"
+            min="0"
+            onChange={(event) => onChange({ remainingAmount: event.currentTarget.value })}
+            placeholder="97460"
+            type="number"
+            value={formState.remainingAmount}
+          />
+        </label>
+        <label className="form-field reset-field">
+          <span>Reset</span>
+          <input
+            autoComplete="off"
+            className="root-input"
+            onChange={(event) => onChange({ resetAt: event.currentTarget.value })}
+            placeholder="2026-06-21T00:00:00Z"
+            spellCheck={false}
+            type="text"
+            value={formState.resetAt}
+          />
+        </label>
+      </div>
+      <div className="allowance-actions">
+        <div className="manual-refresh-row">
+          <span>State</span>
+          <StatusBadge label={stateLabel} />
+        </div>
+        {saveState.phase === "succeeded" || saveState.phase === "failed" ? (
+          <div className="manual-refresh-row">
+            <span>Result</span>
+            <strong>{saveState.message}</strong>
+          </div>
+        ) : null}
+        <button className="sync-button" disabled={isSaving} type="submit">
+          <Save size={15} />
+          {isSaving ? "Saving" : "Save allowance"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ManualRefreshMock({
   autoRefreshEnabled,
   autoRefreshIntervalMinutes,
@@ -805,61 +1196,66 @@ function ManualRefreshMock({
   );
 
   return (
-    <div className="manual-refresh-mock" aria-label="Manual refresh mock state">
-      <div className="manual-refresh-row">
-        <span>Command</span>
-        <strong>{manualRefreshMockState.commandName}</strong>
+    <div className="manual-refresh-panel" aria-label="Manual refresh state">
+      <div className="manual-refresh-hero">
+        <div className={`refresh-state-mark ${runState.phase}`} />
+        <div className="manual-refresh-copy">
+          <span>State</span>
+          <strong>{stateLabel}</strong>
+          <small>{rootsLabel}</small>
+        </div>
       </div>
-      <div className="manual-refresh-row">
-        <span>State</span>
-        <StatusBadge label={stateLabel} />
+      <div className="manual-refresh-actions">
+        <label className="toggle-control">
+          <input
+            checked={autoRefreshEnabled}
+            disabled={!canInvoke || !rootsAreSavedForAutoRefresh}
+            onChange={(event) => onAutoRefreshChange(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          Auto
+        </label>
+        <button
+          aria-label={canInvoke ? "Run manual refresh" : manualRefreshMockState.disabledAriaLabel}
+          className="sync-button"
+          disabled={!canInvoke || isRunning}
+          onClick={onRefresh}
+          title={canInvoke ? "Run production manual refresh" : manualRefreshMockState.disabledTitle}
+          type="button"
+        >
+          <RefreshCw size={15} />
+          {isRunning ? "Refreshing" : "Refresh"}
+        </button>
       </div>
-      <div className="manual-refresh-row">
-        <span>Roots</span>
-        <strong>{rootsLabel}</strong>
-      </div>
-      <div className="manual-refresh-row">
-        <span>Needs</span>
-        <strong>{needsLabel}</strong>
-      </div>
-      <div className="manual-refresh-row">
-        <span>Bridge</span>
-        <StatusBadge label={bridgeLabel} />
-      </div>
-      <div className="manual-refresh-row">
-        <span>Auto</span>
-        <StatusBadge label={autoStatusLabel} />
-      </div>
-      <div className="manual-refresh-row">
-        <span>Interval</span>
-        <strong>{autoRefreshIntervalMinutes} min</strong>
-      </div>
-      <label className="toggle-control">
-        <input
-          checked={autoRefreshEnabled}
-          disabled={!canInvoke || !rootsAreSavedForAutoRefresh}
-          onChange={(event) => onAutoRefreshChange(event.currentTarget.checked)}
-          type="checkbox"
-        />
-        Auto
-      </label>
-      <button
-        aria-label={canInvoke ? "Run manual refresh" : manualRefreshMockState.disabledAriaLabel}
-        className="sync-button"
-        disabled={!canInvoke || isRunning}
-        onClick={onRefresh}
-        title={canInvoke ? "Run production manual refresh" : manualRefreshMockState.disabledTitle}
-        type="button"
-      >
-        <RefreshCw size={15} />
-        {isRunning ? "Refreshing" : "Refresh"}
-      </button>
       {runState.phase === "succeeded" || runState.phase === "failed" ? (
-        <div className="manual-refresh-row">
-          <span>Result</span>
+        <div className={`manual-refresh-result ${runState.phase}`}>
+          <span>Last run</span>
           <strong>{runState.message}</strong>
         </div>
       ) : null}
+      <div className="manual-refresh-summary">
+        <RefreshSummaryItem label="Ready check" value={needsLabel} detail={bridgeLabel} />
+        <RefreshSummaryItem label="Auto refresh" value={autoStatusLabel} detail={`${autoRefreshIntervalMinutes} min`} />
+        <RefreshSummaryItem label="Command" value={<code>{manualRefreshMockState.commandName}</code>} />
+      </div>
+    </div>
+  );
+}
+
+function RefreshSummaryItem({
+  detail,
+  label,
+  value
+}: {
+  detail?: string;
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="refresh-summary-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {detail ? <small>{detail}</small> : null}
     </div>
   );
 }
@@ -1014,19 +1410,53 @@ function rootDraftValue(sourceKind: ExplicitRootSourceKind, draft: ExplicitRootS
   return draft.githubCopilotJsonlRoot ?? "";
 }
 
-function ApiCostsView({ dataMode, payload }: { dataMode: DashboardDataMode; payload: MockSummaryPayload }) {
+function ApiCostsView({
+  credentialFormState,
+  credentialRunState,
+  credentialStatuses,
+  dataMode,
+  endpointDiagnostics,
+  onCredentialChange,
+  onCredentialRemove,
+  onCredentialSave,
+  onProviderBillingSync,
+  payload
+}: {
+  credentialFormState: ApiProviderCredentialFormState;
+  credentialRunState: ApiProviderCredentialRunState;
+  credentialStatuses: readonly ApiCostProviderStatus[];
+  dataMode: DashboardDataMode;
+  endpointDiagnostics: ApiProviderEndpointDiagnostics;
+  onCredentialChange: (patch: Partial<ApiProviderCredentialFormState>) => void;
+  onCredentialRemove: () => void;
+  onCredentialSave: () => void;
+  onProviderBillingSync: () => void;
+  payload: MockSummaryPayload;
+}) {
   const costTotals = payload.summary.by_source.openai_api_cost;
-  const costWindow = payload.allowance_windows.find((item) => item.source_kind === "openai_api_cost");
-  const costEstimateValue = dataMode === "mock" ? "$1.03" : "Unavailable";
-  const costEstimateUnit = dataMode === "mock" ? "mock estimate" : "secondary source not connected";
+  const costSummary = payload.cost_summary;
+  const credentialStatusByProvider = apiProviderCredentialStatusByProvider(credentialStatuses);
+  const providersWithCost = apiCostProviders.filter((provider) =>
+    hasCostSourceTotals(costSummary.by_source[provider.sourceKind])
+  );
+  const costEstimateValue = formatUsd(costSummary.total_usd);
+  const costEstimateUnit = costSummary.total_usd === null
+    ? "no stored cost records"
+    : dataMode === "mock"
+      ? "mock stored aggregate"
+      : "stored aggregate";
+  const costWindowLabel = costSummary.window_start && costSummary.window_end
+    ? `${costSummary.window_start} to ${costSummary.window_end}`
+    : "No stored window";
+  const openAiCostStatus = providerCostStatus("openai_api_cost", costSummary.by_source.openai_api_cost);
 
   return (
     <section className="single-column">
       <div className="metric-strip compact" aria-label="API cost metrics">
         <MetricTile label="Cost estimate" value={costEstimateValue} unit={costEstimateUnit} tone="secondary" />
         <MetricTile label="Providers" value={String(apiCostProviders.length)} unit="secondary sources" />
-        <MetricTile label="Connected" value="0" unit="cost sync unavailable" />
-        <MetricTile label="Cost source" value="Unavailable" unit={costWindow?.status.replace("_", " ") ?? "not connected"} />
+        <MetricTile label="Stored" value={String(providersWithCost.length)} unit="providers with cost records" />
+        <MetricTile label="Cost source" value={openAiCostStatus} unit={costWindowLabel} />
       </div>
 
       <Panel title="Provider Status">
@@ -1035,22 +1465,78 @@ function ApiCostsView({ dataMode, payload }: { dataMode: DashboardDataMode; payl
             <tr>
               <th>Provider</th>
               <th>Status</th>
+              <th>Credential</th>
+              <th>Usage API</th>
+              <th>Costs API</th>
+              <th>Stored cost</th>
               <th>Next step</th>
             </tr>
           </thead>
           <tbody>
-            {apiCostProviders.map((provider) => (
-              <tr key={provider.sourceKind}>
-                <td>{sourceLabels[provider.sourceKind]}</td>
-                <td><StatusBadge label={provider.status} /></td>
-                <td>{provider.detail}</td>
-              </tr>
-            ))}
+            {apiCostProviders.map((provider) => {
+              const providerCost = costSummary.by_source[provider.sourceKind];
+              const credentialStatus = credentialStatusByProvider.get(provider.sourceKind)
+                ?? apiCostProviderStatusFor(provider.sourceKind);
+              const diagnostics = endpointDiagnostics[provider.sourceKind];
+              return (
+                <tr key={provider.sourceKind}>
+                  <td>{sourceLabels[provider.sourceKind]}</td>
+                  <td><StatusBadge label={providerCostStatus(provider.sourceKind, providerCost, credentialStatus)} /></td>
+                  <td>{credentialStatus.credentialConfigured ? "Configured" : "Not configured"}</td>
+                  <td><StatusBadge label={apiProviderEndpointStatusLabel(diagnostics?.usage)} /></td>
+                  <td><StatusBadge label={apiProviderEndpointStatusLabel(diagnostics?.costs)} /></td>
+                  <td>{providerCost ? formatUsd(providerCost.total_usd) : "No stored data"}</td>
+                  <td>{providerCostNextStep(provider, providerCost, credentialStatus)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </Panel>
 
-      <Panel title="API Cost Breakdown">
+      <Panel title="Provider Credentials">
+        <ApiProviderCredentialForm
+          formState={credentialFormState}
+          onChange={onCredentialChange}
+          onRemove={onCredentialRemove}
+          onSave={onCredentialSave}
+          onSync={onProviderBillingSync}
+          runState={credentialRunState}
+          statuses={credentialStatuses}
+        />
+      </Panel>
+
+      <Panel title="Stored Cost Breakdown">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Cost</th>
+              <th>Buckets</th>
+              <th>Events</th>
+            </tr>
+          </thead>
+          <tbody>
+            {providersWithCost.length ? providersWithCost.map((provider) => {
+              const providerCost = costSummary.by_source[provider.sourceKind];
+              return providerCost ? (
+                <tr key={provider.sourceKind}>
+                  <td>{sourceLabels[provider.sourceKind]}</td>
+                  <td>{formatUsd(providerCost.total_usd)}</td>
+                  <td>{formatInteger(providerCost.bucket_count)}</td>
+                  <td>{formatInteger(providerCost.event_count)}</td>
+                </tr>
+              ) : null;
+            }) : (
+              <tr>
+                <td colSpan={4}>No stored cost data. OpenAI org costs require an Admin API key, not a personal API key.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Panel>
+
+      <Panel title="OpenAI Admin Usage">
         <table className="data-table">
           <thead>
             <tr>
@@ -1073,6 +1559,117 @@ function ApiCostsView({ dataMode, payload }: { dataMode: DashboardDataMode; payl
         </table>
       </Panel>
     </section>
+  );
+}
+
+function ApiProviderCredentialForm({
+  formState,
+  onChange,
+  onRemove,
+  onSave,
+  onSync,
+  runState,
+  statuses
+}: {
+  formState: ApiProviderCredentialFormState;
+  onChange: (patch: Partial<ApiProviderCredentialFormState>) => void;
+  onRemove: () => void;
+  onSave: () => void;
+  onSync: () => void;
+  runState: ApiProviderCredentialRunState;
+  statuses: readonly ApiCostProviderStatus[];
+}) {
+  const selectedStatus = apiProviderCredentialStatusByProvider(statuses).get(formState.providerId)
+    ?? apiCostProviderStatusFor(formState.providerId);
+  const isSaving = runState.phase === "saving";
+  const isRemoving = runState.phase === "removing";
+  const isSyncing = runState.phase === "syncing";
+  const canSync = formState.providerId === "openai_api_cost"
+    && selectedStatus.credentialConfigured
+    && !isSaving
+    && !isRemoving
+    && !isSyncing;
+  const stateLabel = apiProviderCredentialRunStateLabel(runState);
+
+  return (
+    <form
+      className="manual-allowance-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <div className="allowance-input-grid api-credential-grid">
+        <label className="form-field">
+          <span>Provider</span>
+          <select
+            className="root-input"
+            onChange={(event) => onChange({ providerId: event.currentTarget.value as ApiCostSourceKind })}
+            value={formState.providerId}
+          >
+            {apiCostProviderIds.map((providerId) => (
+              <option key={providerId} value={providerId}>
+                {sourceLabels[providerId]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field api-key-field">
+          <span>Key</span>
+          <input
+            autoComplete="off"
+            className="root-input"
+            onChange={(event) => onChange({ apiKey: event.currentTarget.value })}
+            placeholder="Paste key"
+            spellCheck={false}
+            type="password"
+            value={formState.apiKey}
+          />
+        </label>
+      </div>
+      <div className="allowance-actions">
+        <div className="manual-refresh-row">
+          <span>State</span>
+          <StatusBadge label={stateLabel} />
+        </div>
+        <div className="manual-refresh-row">
+          <span>Credential</span>
+          <strong>{selectedStatus.credentialConfigured ? "Configured" : "Not configured"}</strong>
+        </div>
+        <div className="manual-refresh-row">
+          <span>Adapter</span>
+          <strong>{apiCostProviderStatusLabel(selectedStatus.status)}</strong>
+        </div>
+        {runState.phase === "saved" || runState.phase === "synced" || runState.phase === "removed" || runState.phase === "failed" ? (
+          <div className="manual-refresh-row">
+            <span>Result</span>
+            <strong>{runState.message}</strong>
+          </div>
+        ) : null}
+        <button className="sync-button" disabled={isSaving || isSyncing || !formState.apiKey.trim()} type="submit">
+          <Save size={15} />
+          {isSaving ? "Saving" : "Save key"}
+        </button>
+        <button
+          className="sync-button"
+          disabled={!canSync}
+          onClick={onSync}
+          type="button"
+        >
+          <RefreshCw size={15} />
+          {isSyncing ? "Syncing" : "Sync billing"}
+        </button>
+        <button
+          className="sync-button secondary-action"
+          disabled={isRemoving || isSyncing || !selectedStatus.credentialConfigured}
+          onClick={onRemove}
+          type="button"
+        >
+          <X size={15} />
+          {isRemoving ? "Removing" : "Remove"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -1109,28 +1706,34 @@ function SettingsView({ payload }: { payload: MockSummaryPayload }) {
 }
 
 function PrimaryMetricStrip({
+  costSummary,
   dataMode,
   totals,
   remaining,
   windowLabel
 }: {
+  costSummary: MockSummaryPayload["cost_summary"];
   dataMode: DashboardDataMode;
   totals: TokenTotals;
   remaining: AllowanceWindow | undefined;
   windowLabel: string;
 }) {
-  const costEstimateValue = dataMode === "mock" ? "$1.03" : "Unavailable";
-  const costEstimateUnit = dataMode === "mock" ? "secondary source" : "secondary source not connected";
+  const costEstimateValue = formatUsd(costSummary.total_usd);
+  const costEstimateUnit = costSummary.total_usd === null
+    ? "no stored cost records"
+    : dataMode === "mock"
+      ? "mock stored aggregate"
+      : "stored aggregate";
 
   return (
     <section className="metric-strip" aria-label={`${windowLabel} metrics`}>
       <MetricTile label="Usage consumed" value={formatTokens(totals.total_tokens)} unit="tokens" tone="primary" />
       <MetricTile
         label="Remaining"
-        value={remaining ? formatAllowance(remaining) : "Unavailable"}
-        unit={remaining?.status === "manual" ? "manual estimate" : "derived estimate"}
+        value={remaining ? formatAllowance(remaining) : "Not configured"}
+        unit={remaining ? `${remaining.status.replace("_", " ")} estimate` : "manual optional"}
       />
-      <MetricTile label="Reset" value={remaining?.reset_at ? formatDate(remaining.reset_at) : "Unavailable"} unit="next known reset" />
+      <MetricTile label="Reset" value={remaining?.reset_at ? formatDate(remaining.reset_at) : "Not configured"} unit="next known reset" />
       <MetricTile label="Cost estimate" value={costEstimateValue} unit={costEstimateUnit} tone="secondary" />
       <MetricTile label="Window" value={windowLabel} unit={dataMode === "mock" ? "mock contract" : "local aggregate"} />
       <MetricTile label="Cached share" value={cachedShare(totals)} unit="input tokens" />
@@ -1290,18 +1893,6 @@ function SourceStatusList({ payload }: { payload: MockSummaryPayload }) {
   );
 }
 
-function StatePanel({ icon, title, action }: { icon: ReactNode; title: string; action: string }) {
-  return (
-    <Panel title={title}>
-      <div className="empty-state">
-        {icon}
-        <strong>{title}</strong>
-        <button className="sync-button" disabled type="button">{action}</button>
-      </div>
-    </Panel>
-  );
-}
-
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="fact-row">
@@ -1343,6 +1934,130 @@ function firstKnownAllowance(payload: MockSummaryPayload, sourceKinds: SourceKin
   return payload.allowance_windows.find(
     (window) => sourceKinds.includes(window.source_kind) && window.remaining_amount !== undefined
   );
+}
+
+function allowanceStatusLabel(window: AllowanceWindow | undefined) {
+  return window ? window.status.replace("_", " ") : "Not configured";
+}
+
+function hasCostSourceTotals(totals: MockSummaryPayload["cost_summary"]["by_source"][ApiCostSourceKind]) {
+  return totals !== undefined && totals.bucket_count > 0;
+}
+
+function apiProviderCredentialStatusByProvider(statuses: readonly ApiCostProviderStatus[]) {
+  return new Map(statuses.map((status) => [status.providerId, status]));
+}
+
+function replaceApiProviderCredentialStatus(
+  statuses: readonly ApiCostProviderStatus[],
+  replacement: ApiCostProviderStatus
+) {
+  const statusByProvider = apiProviderCredentialStatusByProvider(statuses);
+  statusByProvider.set(replacement.providerId, replacement);
+  return apiCostProviderIds.map((providerId) =>
+    statusByProvider.get(providerId) ?? apiCostProviderStatusFor(providerId)
+  );
+}
+
+function providerCostStatus(
+  sourceKind: ApiCostSourceKind,
+  totals: MockSummaryPayload["cost_summary"]["by_source"][ApiCostSourceKind] | undefined,
+  credentialStatus: ApiCostProviderStatus = apiCostProviderStatusFor(sourceKind)
+) {
+  if (hasCostSourceTotals(totals)) {
+    return "Stored";
+  }
+  return apiCostProviderStatusLabel(credentialStatus.status);
+}
+
+function apiProviderEndpointStatusLabel(
+  status: ApiProviderEndpointStatusesPayload["usage"] | undefined
+) {
+  if (status === undefined) {
+    return "Not checked";
+  }
+  const labels: Record<ApiProviderEndpointStatusesPayload["usage"], string> = {
+    ready: "Ready",
+    invalid_key: "Invalid key",
+    permission_denied: "Permission denied",
+    rate_limited: "Rate limited",
+    unavailable: "Unavailable"
+  };
+  return labels[status];
+}
+
+function providerCostNextStep(
+  provider: ApiCostProvider,
+  totals: MockSummaryPayload["cost_summary"]["by_source"][ApiCostSourceKind] | undefined,
+  credentialStatus: ApiCostProviderStatus = apiCostProviderStatusFor(provider.sourceKind)
+) {
+  if (hasCostSourceTotals(totals)) {
+    return "Loaded from local aggregate storage";
+  }
+  if (credentialStatus.status === "not_configured") {
+    return "Save a provider credential or import sanitized Admin payloads";
+  }
+  if (credentialStatus.status === "unavailable" && credentialStatus.credentialConfigured) {
+    return "Credential stored with OS protection; sync billing to validate access";
+  }
+  if (credentialStatus.status === "invalid_key") {
+    return "Stored key was read but OpenAI rejected it";
+  }
+  if (credentialStatus.status === "permission_denied") {
+    return "Stored key was read but lacks OpenAI Admin billing access";
+  }
+  if (credentialStatus.status === "rate_limited") {
+    return "Stored key was read; OpenAI rate limited the billing request";
+  }
+  if (credentialStatus.message) {
+    return credentialStatus.message;
+  }
+  return provider.detail;
+}
+
+function apiProviderBillingSyncMessage(
+  eventsSeen: number,
+  providerStatus: ApiCostProviderStatus | undefined
+) {
+  if (providerStatus?.status === "invalid_key") {
+    return "Stored key was read but OpenAI rejected it";
+  }
+  if (providerStatus?.status === "permission_denied") {
+    return "Stored key was read but lacks OpenAI Admin billing access";
+  }
+  if (providerStatus?.status === "rate_limited") {
+    return "Stored key was read; OpenAI rate limited the billing request";
+  }
+  if (providerStatus && providerStatus.status !== "ready") {
+    return apiCostProviderStatusLabel(providerStatus.status);
+  }
+  return `Synced ${formatInteger(eventsSeen)} billing records`;
+}
+
+function apiProviderCredentialRunStateLabel(state: ApiProviderCredentialRunState) {
+  const labels: Record<ApiProviderCredentialRunState["phase"], string> = {
+    idle: "Idle",
+    loading: "Loading",
+    loaded: "Loaded",
+    saving: "Saving",
+    saved: "Saved",
+    syncing: "Syncing",
+    synced: "Synced",
+    removing: "Removing",
+    removed: "Removed",
+    failed: "Unavailable"
+  };
+  return labels[state.phase];
+}
+
+function optionalNumberInput(value: string) {
+  const text = value.trim();
+  return text ? Number(text) : undefined;
+}
+
+function optionalTextInput(value: string) {
+  const text = value.trim();
+  return text || undefined;
 }
 
 function headerSubtitle(view: ViewId, dataMode: DashboardDataMode) {
@@ -1391,6 +2106,16 @@ function formatCompactNumber(value: number) {
   }).format(value);
 }
 
+function formatUsd(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "No data";
+  }
+  return new Intl.NumberFormat("en-US", {
+    currency: "USD",
+    style: "currency"
+  }).format(value);
+}
+
 function formatPercent(value: number) {
   if (value > 0 && value < 1) {
     return "<1%";
@@ -1411,7 +2136,7 @@ function allowanceUnitLabel(unit: AllowanceWindow["unit"]) {
 
 function formatAllowance(window: AllowanceWindow) {
   if (window.remaining_amount === undefined) {
-    return "Unavailable";
+    return "Not configured";
   }
   return window.unit === "tokens" ? formatTokens(window.remaining_amount) : `${window.remaining_amount}`;
 }

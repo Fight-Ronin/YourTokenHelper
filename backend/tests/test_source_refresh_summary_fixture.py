@@ -37,6 +37,12 @@ def test_source_refresh_summary_fixture_builds_pr5_handoff_payload():
     }
     assert payload["storage_summary"]["summary"]["event_count"] == 7
     assert payload["storage_summary"]["summary"]["totals"]["total_tokens"] == 17040
+    assert payload["storage_summary"]["cost_summary"] == {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "total_usd": None,
+        "by_source": {},
+    }
 
 
 def test_source_refresh_summary_fixture_can_export_json(tmp_path):

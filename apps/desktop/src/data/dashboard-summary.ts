@@ -1,8 +1,10 @@
 import type {
   AllowanceWindow,
+  CostSummary,
   MockSummaryPayload,
   RefreshState,
   RefreshStorageSummaryPayload,
+  ApiCostSourceKind,
   SourceKind,
   SourceState,
   TokenTotals
@@ -70,6 +72,7 @@ export function buildDashboardSummaryFromRefresh(
       by_source: completeSourceTotals(storageSummary.summary.by_source),
       by_day_source: completeDailySourceTotals(storageSummary.summary.by_day_source ?? {})
     },
+    cost_summary: completeCostSummary(storageSummary.cost_summary),
     source_states: completeSourceStates(storageSummary.source_states)
   };
 }
@@ -226,6 +229,25 @@ function completeDailySourceTotals(
   );
 }
 
+function completeCostSummary(costSummary: CostSummary | undefined): CostSummary {
+  if (!costSummary) {
+    return {
+      window_start: null,
+      window_end: null,
+      total_usd: null,
+      by_source: {}
+    };
+  }
+  return {
+    ...costSummary,
+    by_source: Object.fromEntries(
+      Object.entries(costSummary.by_source ?? {})
+        .filter(([sourceKind]) => apiCostSourceKinds.has(sourceKind as SourceKind))
+        .map(([sourceKind, totals]) => [sourceKind as ApiCostSourceKind, { ...totals }])
+    )
+  };
+}
+
 function completeSourceStates(sourceStates: SourceState[]): SourceState[] {
   const byKind = new Map(sourceStates.map((sourceState) => [sourceState.source_kind, sourceState]));
   return dashboardSourceKinds.map((sourceKind) => byKind.get(sourceKind) ?? fallbackSourceState(sourceKind));
@@ -259,10 +281,22 @@ function sourceUsageProgress(
     return { kind: "usage_share", percent: usageShare };
   }
 
-  const usedAmount = knownNumber(allowanceWindow.used_amount)
-    ?? (allowanceWindow.unit === "tokens" ? totals.total_tokens : undefined);
   const remainingAmount = knownNumber(allowanceWindow.remaining_amount);
-  const limitAmount = knownNumber(allowanceWindow.limit_amount)
+  const explicitLimitAmount = knownNumber(allowanceWindow.limit_amount);
+  if (
+    explicitLimitAmount !== undefined &&
+    remainingAmount !== undefined &&
+    remainingAmount > explicitLimitAmount
+  ) {
+    return { kind: "usage_share", percent: usageShare };
+  }
+
+  const usedAmount = knownNumber(allowanceWindow.used_amount)
+    ?? (explicitLimitAmount !== undefined && remainingAmount !== undefined
+      ? explicitLimitAmount - remainingAmount
+      : undefined)
+    ?? (allowanceWindow.unit === "tokens" ? totals.total_tokens : undefined);
+  const limitAmount = explicitLimitAmount
     ?? (usedAmount !== undefined && remainingAmount !== undefined ? usedAmount + remainingAmount : undefined);
   if (usedAmount === undefined || limitAmount === undefined || limitAmount <= 0) {
     return { kind: "usage_share", percent: usageShare };

@@ -111,3 +111,37 @@ def test_openai_admin_sync_command_cli_rejects_non_json_stdin():
             "message": "OpenAI Admin sync request must be valid JSON",
         }
     }
+
+
+def test_openai_admin_sync_command_cli_rejects_invalid_bucket_timestamp():
+    exit_code, text, payload = run_cli_payload(
+        {
+            "end_day_utc": "2026-06-13",
+            "payload": {
+                "usage": {
+                    "data": [
+                        {
+                            "start_time": 999999999999999999999999,
+                            "results": [
+                                {
+                                    "input_tokens": 10,
+                                    "output_tokens": 2,
+                                }
+                            ],
+                        }
+                    ]
+                },
+                "costs": {"data": []},
+            },
+        }
+    )
+
+    assert exit_code == 0
+    assert payload == {
+        "error": {
+            "code": "invalid_openai_admin_sync_request",
+            "field": "payload",
+            "message": "OpenAI Admin bucket start_time is invalid",
+        }
+    }
+    assert text.endswith("\n")

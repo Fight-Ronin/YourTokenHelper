@@ -298,50 +298,130 @@ Connect Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot parsers/impor
 
 ## PR 6: OpenAI API Cost Source
 
-Status: first backend slice in progress.
+Status: payload ingestion, local readback, secure credential storage, and
+explicit OpenAI live billing sync are implemented; non-OpenAI billing adapters
+remain verification follow-ups.
 
 ### Goal
 
-Connect the real OpenAI Admin Usage API and secondary cost paths to local aggregate storage.
+Land deterministic OpenAI Admin usage/cost ingestion, explicit live sync, and
+the local API Costs read path without storing plaintext API keys.
 
 ### Scope
 
-- Add secure storage for the OpenAI Admin API key.
-- Add key validation for usage and costs access.
-- Add manual sync.
-- Add a backend-only payload/fixture sync command before live key handling.
+- Add a backend payload/fixture sync command and an explicit live sync command
+  for verified providers.
+- Add a backend-only Admin API key monitor payload command before secure key storage.
+- Add an env-only Admin API key probe for explicit negative-path diagnostics.
+- Add encrypted desktop credential storage for provider keys and use it only to
+  inject the OpenAI Admin key into the live sync backend process environment.
 - Ingest usage buckets.
 - Ingest cost buckets when available.
 - Record sync runs.
-- Surface source health in the Sources view.
-- Back Daily and Weekly views with synced local data.
+- Surface stored API cost aggregates in the secondary API Costs view.
+- Back Daily and Weekly cost estimates from local aggregate storage.
+- Allow the user to trigger OpenAI Admin usage/cost sync from API Costs without
+  sending plaintext keys, local paths, raw responses, or raw provider payloads
+  through UI result payloads.
+- Keep missing usage/cost endpoints invalid; permission denied and unavailable
+  endpoints must be explicit.
+- Keep Admin API key IDs and project IDs hashed before storage or UI payloads.
+- Keep allowance windows empty unless a reliable allowance source is captured
+  later.
 - Reserve provider-status slots for Claude, Gemini, and DeepSeek API cost
   sources, but do not mark them connected until an official billing API or
   export shape has deterministic fixture coverage.
 
 ### Verification
 
-- Invalid key shows a recoverable invalid-key state.
-- Non-admin or insufficient-permission key shows a permission state.
+- Fixture payload sync writes usage and cost aggregates to SQLite.
+- API Costs reads stored cost aggregates without fake zero-cost rows.
+- Admin key monitor maps ready, invalid-key, permission-denied, rate-limited,
+  and generic-error states without echoing raw key metadata.
+- Env-only Admin key probe maps missing env and personal/non-admin permission
+  denial without accepting API keys in JSON request payloads.
 - Empty usage shows a no-usage state.
 - Partial costs show usage normally and mark cost as partial or unavailable.
 - Missing allowance data shows consumed usage normally and marks remaining usage as unavailable, manual, or derived.
-- Manual sync updates last successful sync and sync-run history.
+- Backend, desktop command, frontend build, and Rust tests pass.
 
 ### Non-Goals
 
-- No automatic background sync unless manual sync is stable.
+- No automatic background sync.
+- No verified live billing adapters for Claude, Gemini, or DeepSeek yet.
 - No team account management.
 - No usage mutation or billing actions.
 - No Monthly view.
 
-### Risks To Resolve
+### Remaining Risks
 
 - Secure storage behavior across Windows, macOS, and Linux.
 - Rate-limit behavior and retry policy.
 - How to present API key IDs if names are unavailable.
 - How each non-OpenAI provider exposes usage, price, project/key grouping, and
   permission errors without requiring screen scraping.
+
+## PR 6b: API Provider Credentials And Manual Sync
+
+Status: OpenAI credential storage and manual sync implemented; non-OpenAI
+provider adapters and richer status history remain planned.
+
+### Goal
+
+Add an explicit, user-triggered API cost sync path that is multi-provider at
+the credential, command, and UI contract layers while keeping provider-specific
+API logic isolated behind verified adapters. Key material must stay out of
+SQLite, logs, backend command JSON, and returned UI payloads. The only allowed
+secret-bearing UI payload is the transient save/replace request from the key
+input to the Tauri command.
+
+### Scope
+
+- Add secure storage for API cost provider credentials keyed by an allowlisted
+  provider id: `openai_api_cost`, `claude_api_cost`, `gemini_api_cost`, or
+  `deepseek_api_cost`.
+- Current desktop slice stores provider credentials as Windows DPAPI-protected
+  app-data blobs and returns only redacted provider status metadata.
+- Add provider-generic Tauri commands to save, replace, remove, status-check,
+  and probe a stored provider credential.
+- Add a provider-generic manual sync command that accepts only provider id and
+  `end_day_utc` on the UI/backend command boundary.
+- Keep OpenAI as the first concrete sync adapter because PR6 already has
+  official Admin usage/cost fixture ingestion and live fetch coverage; other
+  providers stay in explicit `needs_verified_adapter` states until official
+  billing/export shapes have deterministic fixture coverage.
+- Add one shared API Costs setup UI with provider rows for stored-key status,
+  validation result, last sync, manual sync, and remove-key actions.
+- Store only redacted source health and sync metadata in SQLite.
+- Keep provider behavior explicit: not configured, needs verified adapter,
+  invalid key, permission denied, rate limited, unavailable, syncing, and ready
+  must be distinct states.
+
+### Verification
+
+- Saving/replacing/removing a key never echoes key material in stdout, stderr,
+  logs, returned Tauri payloads, SQLite, or tests.
+- Unknown or user-controlled provider ids are rejected before storage or sync.
+- Providers without a verified adapter return `needs_verified_adapter` without
+  network calls or fake usage/cost data.
+- OpenAI personal/non-admin key validation returns a recoverable permission or
+  invalid state.
+- Manual sync updates usage/cost aggregates and sync-run history when a
+  verified provider endpoint is available.
+- Permission-denied costs keep available usage and mark cost partial or
+  unavailable.
+- Missing allowance data never creates quota progress.
+- Desktop UI shows setup, needs-adapter, ready, syncing, permission-denied,
+  rate-limited, and unavailable states without raw API responses.
+
+### Non-Goals
+
+- No automatic background sync.
+- No provider-specific sync without official docs or deterministic fixture
+  coverage.
+- No multi-key aliases or provider key labels.
+- No team account management.
+- No internal endpoint scraping or personal web login.
 
 ## PR 7: Trust, Export, And Packaging Check
 
@@ -387,7 +467,7 @@ These should not block V1:
 - Menu bar or tray glance.
 - Budget alerts.
 - Allowance alerts.
-- Multi-provider usage.
+- Additional provider/source categories beyond the V1 source list.
 - Additional coding agents beyond Gemini CLI and GitHub Copilot.
 
 ## Cross-PR Guardrails
@@ -396,6 +476,8 @@ These should not block V1:
 - Do not store prompt, response, request body, or raw transcript data.
 - Do not silently show zero cost when costs are unavailable.
 - Do not imply exact remaining usage when allowance data is manual, derived, or unavailable.
+- Do not render quota progress unless an explicit `allowance_windows` row backs it; missing allowance data should render consumed usage share only.
+- Manual allowance commands should accept structured source/unit/number/time fields only, not paths, raw provider payloads, notes, or user-controlled source ids.
 - Do not introduce Monthly as a first-class route before Daily and Weekly are stable.
 - Prefer fixtures and deterministic tests before live API assumptions.
 - Any live API behavior discovered in PR 1 should update the PRD before implementation relies on it.

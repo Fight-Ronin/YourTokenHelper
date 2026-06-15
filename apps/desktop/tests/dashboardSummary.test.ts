@@ -32,7 +32,15 @@ assert(
 assertDeepEqual(
   dashboardPayload.summary.by_source.openai_api_cost,
   emptyTokenTotals(),
-  "OpenAI API cost should be an explicit empty secondary source until PR6"
+  "OpenAI API cost usage should be empty until an Admin usage payload is imported"
+);
+assert(dashboardPayload.cost_summary.window_start === "2026-06-08", "cost summary should use rolling window start");
+assert(dashboardPayload.cost_summary.window_end === "2026-06-14", "cost summary should use rolling window end");
+assert(dashboardPayload.cost_summary.total_usd === null, "local refresh without Admin cost records should have no total cost");
+assertDeepEqual(
+  dashboardPayload.cost_summary.by_source,
+  {},
+  "local refresh without Admin cost records should expose no provider cost totals"
 );
 assertDeepEqual(
   dashboardPayload.summary.by_source.claude_api_cost,
@@ -93,6 +101,30 @@ assert(
 assert(
   sourceUsageRows(dashboardPayload.summary.by_source, []).every((row) => row.sourceKind !== "openai_api_cost"),
   "Source Usage rows should exclude API cost providers"
+);
+const costDashboardPayload = buildDashboardSummaryFromRefresh({
+  ...sourceRefreshSummarySampleCommandContract.result.storage_summary,
+  cost_summary: {
+    window_start: "2026-06-08",
+    window_end: "2026-06-14",
+    total_usd: 1.25,
+    by_source: {
+      openai_api_cost: {
+        total_usd: 1.25,
+        bucket_count: 1,
+        event_count: 3
+      }
+    }
+  }
+});
+assertDeepEqual(
+  costDashboardPayload.cost_summary.by_source.openai_api_cost,
+  {
+    total_usd: 1.25,
+    bucket_count: 1,
+    event_count: 3
+  },
+  "dashboard normalization should preserve stored API cost aggregates"
 );
 assertDeepEqual(
   sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-13"), ["codex"]).map((row) => row.sourceKind),
@@ -168,6 +200,65 @@ assertDeepEqual(
     status: "manual"
   },
   "token allowance progress should use token totals when used_amount is not stored"
+);
+const explicitRemainingRows = sourceUsageRows(
+  {
+    ...sourceTotalsForDay(dashboardPayload, "2026-06-13"),
+    codex: {
+      ...emptyTokenTotals(),
+      total_tokens: 500
+    }
+  },
+  [],
+  [
+    {
+      source_kind: "codex",
+      source_id: "codex:test",
+      status: "manual",
+      unit: "tokens",
+      limit_amount: 100000,
+      remaining_amount: 80000
+    }
+  ]
+);
+assertDeepEqual(
+  explicitRemainingRows.find((row) => row.sourceKind === "codex")?.progress,
+  {
+    kind: "quota",
+    percent: 20,
+    usedAmount: 20000,
+    limitAmount: 100000,
+    unit: "tokens",
+    status: "manual"
+  },
+  "explicit limit and remaining should derive used amount before falling back to visible token totals"
+);
+assertDeepEqual(
+  sourceUsageRows(
+    {
+      ...sourceTotalsForDay(dashboardPayload, "2026-06-13"),
+      codex: {
+        ...emptyTokenTotals(),
+        total_tokens: 500
+      }
+    },
+    [],
+    [
+      {
+        source_kind: "codex",
+        source_id: "codex:test",
+        status: "manual",
+        unit: "tokens",
+        limit_amount: 100,
+        remaining_amount: 125
+      }
+    ]
+  ).find((row) => row.sourceKind === "codex")?.progress,
+  {
+    kind: "usage_share",
+    percent: 100
+  },
+  "remaining greater than limit should fall back to usage share instead of a fake quota bar"
 );
 assertDeepEqual(
   quotaRows.find((row) => row.sourceKind === "claude_code")?.progress,

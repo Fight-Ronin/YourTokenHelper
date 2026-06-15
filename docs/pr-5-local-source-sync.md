@@ -194,6 +194,32 @@ aggregate-only success/error union without echoing supplied roots.
 When no explicit roots are provided, all primary local sources return setup,
 manual, or report setup states and no usage events are stored.
 
+Manual allowance persistence is separate from refresh. The backend command
+`save_manual_allowance_window` accepts only:
+
+- `end_day_utc`.
+- `source_kind`.
+- `unit`.
+- `limit_amount`.
+- Optional `used_amount`.
+- Optional `remaining_amount`.
+- Optional `window_start`.
+- Optional `window_end`.
+- Optional `reset_at`.
+
+It always writes a `manual` allowance window with an internal
+`<source_kind>:manual_allowance` source id, replaces any existing window for the
+same source kind, and returns the updated `storage_summary`. The request must
+not accept `database_path`, source roots, raw provider payloads, raw source ids,
+free-text notes, prompts, responses, transcripts, paths, or filenames.
+The Tauri command with the same name uses the internal app-data SQLite database
+path, and the TypeScript client in `apps/desktop/src/commands/manualAllowance.ts`
+keeps thrown Tauri/browser failures redacted. The command boundary is wired and
+tested. The Sources view now exposes a thin manual allowance form for primary
+usage sources; successful saves promote the returned `storage_summary` into the
+dashboard without accepting paths, raw source ids, notes, prompts, responses, or
+provider payloads.
+
 ## Desktop Type Mirror
 
 The desktop TypeScript mirror lives in `apps/desktop/src/types.ts` as:
@@ -230,6 +256,14 @@ message so exception text cannot echo local paths.
 The pure helper lives in `apps/desktop/src/commands/loadStorageSummaryStartup.ts`
 so command tests can cover startup success and unavailable behavior without a
 Tauri runtime import.
+`apps/desktop/src/commands/manualAllowance.ts` mirrors the
+`save_manual_allowance_window` args/result contract, builds snake_case structured
+args from a camelCase draft, invokes only the production Tauri command, and
+turns thrown Tauri/browser failures into a fixed manual-allowance unavailable
+state without echoing local paths.
+The Sources view calls that client from a path-free manual allowance form,
+limits choices to primary usage sources, and refreshes Daily/Weekly from the
+returned `storage_summary` after a successful save.
 `apps/desktop/src/data/dashboard-summary.ts` normalizes a successful
 `storage_summary` into the dashboard payload used by Daily and Weekly. It
 completes the UI source map without displaying paths and marks API cost provider
@@ -436,6 +470,8 @@ Still blocked by setup:
 | Rust/Tauri command-name, args, result, and process contract | Ready | `refresh_sources_manual` is registered behind the Rust-side explicit-root gate; snake_case args shape, success/error result union, Tauri app-data DB path selection, backend module args, stdin serialization, gated process invocation, optional file-backed DB env handoff, persisted `load_storage_summary` readback, and stdout parsing are tested with synthetic fixtures. |
 | Static desktop sample command | Ready | `source_refresh_summary_sample` is registered and returns embedded aggregate JSON only. |
 | Persisted summary readback command | Ready | `load_storage_summary` reads the same app-data SQLite aggregate by internal DB path only, returns storage summary payloads without refresh metadata, and reports missing storage as unavailable instead of zero usage. |
+| Manual allowance command boundary | Ready | `save_manual_allowance_window` is registered in Tauri, uses the same internal app-data SQLite database, accepts only structured source/unit/number/time fields, returns updated storage summary, and has TS/Rust/backend redaction tests. |
+| Manual allowance UI affordance | Ready | Sources exposes a path-free form for primary usage sources, saves through `save_manual_allowance_window`, promotes the returned storage summary into Daily/Weekly, and labels missing allowance as not configured instead of a quota limit. |
 | Explicit-root config commands | Ready | `load_saved_source_roots`, `save_source_roots`, and `clear_saved_source_roots` store hidden source roots plus auto-refresh settings in app-data only after user action; errors stay redacted and auto refresh requires at least one root. |
 | Startup persisted-summary readback | Ready | React calls only the read-only `load_storage_summary` command on startup, promotes existing aggregate storage into Daily/Weekly, and falls back to mock data on unavailable or thrown failures without exposing paths. Sources also shows the path-free saved aggregate readback state. |
 | Live desktop refresh action | Gated shell | Sources imports the production command client and calls only `refresh_sources_manual`, but the empty-root default keeps the button disabled until at least one explicit source root is present. |

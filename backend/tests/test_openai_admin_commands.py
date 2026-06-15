@@ -68,6 +68,18 @@ def test_openai_admin_sync_command_payload_from_request_syncs_existing_contract(
     assert payload["sync_result"]["events_seen"] == 5
     assert payload["storage_summary"]["summary"]["event_count"] == 109
     assert payload["storage_summary"]["summary"]["totals"]["total_tokens"] == 43100
+    assert payload["storage_summary"]["cost_summary"] == {
+        "window_start": "2026-06-07",
+        "window_end": "2026-06-13",
+        "total_usd": 1.03,
+        "by_source": {
+            "openai_api_cost": {
+                "total_usd": 1.03,
+                "bucket_count": 2,
+                "event_count": 2,
+            },
+        },
+    }
     assert query_cost_total_usd(connection, "2026-06-12", "2026-06-13") == 1.03
 
 
@@ -188,6 +200,35 @@ def test_openai_admin_sync_command_rejects_non_object_payload():
     }
 
 
+def test_openai_admin_sync_command_rejects_absent_endpoints_without_replacement():
+    connection = memory_connection()
+    build_openai_admin_sync_command_payload(
+        connection=connection,
+        payload=fixture_payload(),
+        end_day_utc="2026-06-13",
+        started_at="2026-06-14T00:00:00Z",
+    )
+
+    payload = build_openai_admin_sync_command_payload(
+        connection=connection,
+        payload={},
+        end_day_utc="2026-06-13",
+        started_at="2026-06-14T01:00:00Z",
+    )
+    summary = query_rolling_7d_summary(connection, "2026-06-13")
+
+    assert payload == {
+        "error": {
+            "code": "invalid_openai_admin_sync_request",
+            "field": "payload",
+            "message": "OpenAI Admin usage endpoint payload is required",
+        }
+    }
+    assert summary.event_count == 109
+    assert summary.by_source["openai_api_cost"].total_tokens == 43100
+    assert query_cost_total_usd(connection, "2026-06-12", "2026-06-13") == 1.03
+
+
 def test_openai_admin_sync_command_response_from_json_rejects_non_json_stdin():
     payload = build_openai_admin_sync_command_response_from_json(
         '{"payload":{"api_key_id":"key_fixture_hidden"},'
@@ -254,5 +295,11 @@ def test_openai_admin_sync_command_keeps_usage_when_costs_are_permission_denied(
     assert payload["sync_result"]["status"] == "ready"
     assert payload["sync_result"]["usage_events_seen"] == 3
     assert payload["sync_result"]["cost_records_seen"] == 0
+    assert payload["storage_summary"]["cost_summary"] == {
+        "window_start": "2026-06-07",
+        "window_end": "2026-06-13",
+        "total_usd": None,
+        "by_source": {},
+    }
     assert summary.event_count == 109
     assert query_cost_total_usd(connection, "2026-06-12", "2026-06-13") is None

@@ -48,6 +48,12 @@
   ],
   "storage_summary": {
     "allowance_windows": [],
+    "cost_summary": {
+      "by_source": {},
+      "total_usd": null,
+      "window_end": "2026-06-14",
+      "window_start": "2026-06-08"
+    },
     "generated_from": "backend.sources.refresh",
     "privacy": {
       "stores_prompt_content": false,

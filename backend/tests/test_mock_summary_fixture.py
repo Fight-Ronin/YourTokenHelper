@@ -27,6 +27,18 @@ def test_mock_summary_fixture_has_pr3_ready_contract_shape():
     assert payload["summary"]["totals"]["total_tokens"] == 60140
     assert payload["summary"]["rolling_7d"]["window_start"] == "2026-06-08"
     assert payload["summary"]["rolling_7d"]["window_end"] == "2026-06-14"
+    assert payload["cost_summary"] == {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "total_usd": 1.03,
+        "by_source": {
+            "openai_api_cost": {
+                "total_usd": 1.03,
+                "bucket_count": 1,
+                "event_count": 1,
+            },
+        },
+    }
     assert payload["refresh_state"] == {
         "last_attempt_at": "2026-06-14T00:00:00Z",
         "last_success_at": "2026-06-14T00:00:00Z",

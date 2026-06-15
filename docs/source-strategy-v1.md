@@ -53,45 +53,72 @@ The user should be able to configure per-source allowance windows:
 
 Derived remaining usage should always be labeled as an estimate.
 
+Manual allowance persistence must accept only structured source, unit, numeric
+limit/used/remaining values, and reset/window timestamps. It must not accept
+paths, prompts, responses, raw transcripts, free-text notes, raw provider
+payloads, or user-controlled source ids in UI-facing command payloads.
+
 ### Quota Research Refresh, 2026-06-15
 
-Quota bars must be backed by an `allowance_windows` row with reliable limit data. The app must not infer remaining personal subscription usage from aggregate token events alone.
+Quota bars must be backed by an `allowance_windows` row with reliable limit data. The app must not infer remaining personal subscription usage from aggregate token events alone. Local token totals can support consumed-usage views, but they are not quota evidence by themselves.
 
 | Source | Reliable usage data | Reliable limit/quota data | V1 decision |
 | --- | --- | --- | --- |
-| Codex | Local logs can expose aggregate token usage, and enterprise Analytics API reports daily or weekly workspace usage. | Official docs describe plan-level usage/rate-limit tiers, `/status` context usage and rate-limit visibility, and enterprise analytics usage reporting, but PR5 has no observed durable local structured allowance field. | Keep refresh `allowance_windows` empty unless an official/local allowance field is captured. Source Usage bars show usage share by default. |
-| Claude Code | Local session history exposes token usage, and `/usage` shows session statistics plus day/week plan breakdowns for subscribers. | `/usage` plan bars are approximate and computed from local session history on the current machine; team limits live in Console/admin surfaces. No stable local allowance field is currently normalized. | Treat synced events as consumed usage only. Quota progress needs a future explicit `/usage` import or manual/derived allowance window. |
-| Cursor | Pricing docs say every plan includes model usage, on-demand usage continues after included usage is consumed, and team admins can view usage in Admin Dashboard. Explicit usage export import is supported when the user provides a report root. | No verified personal local quota field or public personal quota API was found in official docs. | Support explicit usage export import for consumed usage. Quota progress needs an official/admin allowance field or manual/derived allowance. |
-| Gemini CLI | Official telemetry can emit token fields, and `/stats model` shows current session token usage plus model/context limit information. | The `/stats model` surface is a session snapshot, not yet an observed durable local allowance window. Telemetry may include prompts/responses unless whitelisted. | Support telemetry only through whitelist parsing. Quota progress needs a verified `/stats` output contract or manual/derived allowance. |
-| GitHub Copilot | Official REST endpoints provide enterprise/org daily usage reports through signed download links. | Those reports are permissioned admin/enterprise metrics and do not establish personal local token allowance or remaining quota. | Start with official report import for authorized org/enterprise users; personal mode remains manual/unavailable. |
+| Codex | Local logs can expose aggregate token usage, and official surfaces describe usage/limit visibility outside the local JSONL parser path. | No observed durable local structured `allowance_windows` field is normalized from Codex JSONL refresh input. CLI/dashboard status is a future explicit import candidate, not an implicit local-log inference. | Keep refresh `allowance_windows` empty unless an official/local allowance field is captured or the user saves a manual window. Source Usage bars show usage share by default. |
+| Claude Code | Local session history can expose token usage, and official cost/monitoring docs describe token and cost signals. | Official docs describe cost metrics as approximations in some contexts, and no stable local allowance contract is normalized by the current parser. | Treat synced events as consumed usage only. Quota progress needs a future explicit `/usage` or admin import after contract verification, or a manual/derived allowance window. |
+| Cursor | Pricing docs say plans include model usage, on-demand usage can continue after included usage, and team admins can view usage in Admin Dashboard. Explicit usage export import is supported when the user provides a report root. | No verified personal local quota field or public personal quota API was found in official docs. | Support explicit usage export import for consumed usage. Quota progress needs an official/admin allowance field or manual/derived allowance. |
+| Gemini CLI | Official quota concepts exist, and telemetry/export can expose token fields when configured. | Session stats or telemetry token fields are not yet a verified durable allowance window. Telemetry may include prompts/responses unless parsing is strictly whitelisted. | Support telemetry only through whitelist parsing. Quota progress needs a verified explicit stats/import contract or manual/derived allowance. |
+| GitHub Copilot | Official REST endpoints provide enterprise/org usage metrics and reports for authorized callers. | Permissioned admin/enterprise metrics do not establish personal local token allowance or remaining quota. | Start with official report import for authorized org/enterprise users; personal mode remains manual/unavailable. |
 
-Sources checked:
+Planning references:
 
 - Codex pricing and usage limits: https://developers.openai.com/codex/pricing
 - Claude Code costs and `/usage`: https://code.claude.com/docs/en/costs
 - Cursor pricing and admin usage note: https://cursor.com/pricing
-- Gemini CLI quotas and `/stats model`: https://geminicli.com/docs/resources/quota-and-pricing/
+- Gemini CLI quotas: https://geminicli.com/docs/resources/quota-and-pricing/
 - Gemini CLI telemetry fields: https://geminicli.com/docs/cli/telemetry/
 - GitHub Copilot usage metrics reports: https://docs.github.com/en/rest/copilot/copilot-usage-metrics
 
 Implementation rule for Source Usage bars:
 
 - If a source has an API-backed, manual, or derived allowance window with enough limit and used data, show quota progress.
-- If allowance is missing or unavailable, show the source's share of visible consumed usage without quota wording.
+- If allowance is missing or unavailable, show the source's share of visible consumed usage without quota wording. UI copy should say `usage split` or equivalent, never `Limit unavailable` on Source Usage bars.
 - Never create synthetic provider limits during refresh. Missing `allowance_windows` is a valid consumed-usage-only state.
 
-### P1: API-Key Cost Source
+### P1: API-Key Cost Sources
 
 API cost is useful, but separate from personal subscription usage.
 
 In the UI, API usage and cost should live on a secondary page/source. It should not block the primary Daily and Weekly local usage views.
 
-OpenAI API cost support should use official organization Administration APIs when available:
+The first live credential/sync implementation should be multi-provider at the
+contract and UI layer. Provider credentials, status, and manual sync commands
+should use an allowlisted provider id rather than OpenAI-specific command names:
+
+- `openai_api_cost`.
+- `claude_api_cost`.
+- `gemini_api_cost`.
+- `deepseek_api_cost`.
+
+Provider-specific network logic should stay behind adapters. A provider must
+remain `needs verified adapter` until its official billing API or export shape
+has deterministic fixture coverage; the app must not imply that an unverified
+provider is connected.
+
+OpenAI is the first concrete adapter because its Admin usage/cost shape is
+already represented by PR6 fixtures. OpenAI API cost support should use official
+organization Administration APIs when available:
 
 - Usage: `GET /v1/organization/usage/completions`.
 - Costs: `GET /v1/organization/costs`.
 
 If the user's key lacks `api.usage.read`, the app should show a permission/setup state, not a broken chart.
+
+For other API cost providers, V1 can store provider credentials and show
+setup/status rows, but manual sync must stay disabled with an explicit
+needs-adapter state until the official source is verified. This keeps the
+minimum product shape multi-brand without creating fake cost data or relying on
+screen scraping.
 
 ### Explicit Non-Source
 

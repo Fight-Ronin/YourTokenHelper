@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import sqlite3
 from typing import Any
 
@@ -9,6 +10,7 @@ from backend.core import SOURCE_KINDS, allowance_window_to_dict, usage_summary_t
 from backend.storage.sqlite_store import (
     list_sources,
     query_allowance_windows,
+    query_cost_summary,
     query_refresh_state,
     query_rolling_7d_summary,
 )
@@ -20,6 +22,7 @@ def build_storage_summary_payload(
     end_day_utc: str,
     generated_from: str = "backend.storage.summary_payload",
 ) -> dict[str, Any]:
+    cost_start_day = rolling_7d_start_day(end_day_utc)
     return {
         "schema_version": 1,
         "generated_from": generated_from,
@@ -33,6 +36,7 @@ def build_storage_summary_payload(
         "summary": usage_summary_to_dict(
             query_rolling_7d_summary(connection, end_day_utc)
         ),
+        "cost_summary": query_cost_summary(connection, cost_start_day, end_day_utc),
         "allowance_windows": allowance_windows_to_payload(
             query_allowance_windows(connection)
         ),
@@ -77,3 +81,8 @@ def source_kind_rank() -> dict[str, int]:
         source_kind: index
         for index, source_kind in enumerate(SOURCE_KINDS)
     }
+
+
+def rolling_7d_start_day(end_day_utc: str) -> str:
+    end_day = dt.date.fromisoformat(end_day_utc)
+    return (end_day - dt.timedelta(days=6)).isoformat()

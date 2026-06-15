@@ -8,7 +8,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from backend.core import UsageEvent
+from backend.core import ContractError, UsageEvent
 from backend.sources.base import SourceState
 from backend.sources.refresh import rolling_7d_window_for_end_day
 from backend.storage import (
@@ -183,6 +183,7 @@ def source_state_from_payload(
     *,
     source_id: str,
 ) -> SourceState:
+    validate_openai_admin_payload_envelope(payload)
     usage = payload.get("usage")
     costs = payload.get("costs")
     usage_has_data = bool(bucket_items(usage))
@@ -225,6 +226,21 @@ def source_state_from_payload(
     )
 
 
+def validate_openai_admin_payload_envelope(payload: Mapping[str, Any]) -> None:
+    for endpoint_name in ("usage", "costs"):
+        endpoint = payload.get(endpoint_name)
+        if not isinstance(endpoint, Mapping):
+            raise ContractError(
+                f"OpenAI Admin {endpoint_name} endpoint payload is required"
+            )
+        has_data = isinstance(endpoint.get("data"), list)
+        has_error = isinstance(endpoint.get("error"), Mapping)
+        if not has_data and not has_error:
+            raise ContractError(
+                f"OpenAI Admin {endpoint_name} endpoint payload must include data or error"
+            )
+
+
 def bucket_items(payload: Any) -> list[Mapping[str, Any]]:
     if not isinstance(payload, Mapping):
         return []
@@ -245,7 +261,14 @@ def timestamp_from_bucket(bucket: Mapping[str, Any]) -> str | None:
     start_time = int_value(bucket.get("start_time"))
     if start_time is None:
         return None
-    return dt.datetime.fromtimestamp(start_time, dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    try:
+        return (
+            dt.datetime.fromtimestamp(start_time, dt.timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ContractError("OpenAI Admin bucket start_time is invalid") from exc
 
 
 def day_from_bucket(bucket: Mapping[str, Any]) -> str | None:

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Iterable
 
-from backend.core import ContractError
-from backend.sources.adapters import ManualStatusAdapter
-from backend.sources.base import SourceAdapter
+from backend.core import ContractError, UsageEvent
+from backend.sources.base import SourceAdapter, SourceState
 from backend.sources.discovery import JsonlSourceCandidate, discover_jsonl_sources
 
 
@@ -17,6 +17,27 @@ PRIMARY_LOCAL_SOURCE_KINDS = (
     "gemini_cli",
     "github_copilot",
 )
+
+
+@dataclass(frozen=True)
+class ManualStatusAdapter:
+    source_kind: str
+    source_id: str
+    status: str
+    confidence: str
+    message: str | None = None
+
+    def get_state(self) -> SourceState:
+        return SourceState(
+            source_kind=self.source_kind,
+            source_id=self.source_id,
+            status=self.status,
+            confidence=self.confidence,
+            message=self.message,
+        )
+
+    def read_events(self) -> list[UsageEvent]:
+        return []
 
 
 def build_primary_source_adapters(

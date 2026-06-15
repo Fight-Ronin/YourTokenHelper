@@ -74,6 +74,18 @@
       "unit": "usd"
     }
   ],
+  "cost_summary": {
+    "by_source": {
+      "openai_api_cost": {
+        "bucket_count": 1,
+        "event_count": 1,
+        "total_usd": 1.03
+      }
+    },
+    "total_usd": 1.03,
+    "window_end": "2026-06-14",
+    "window_start": "2026-06-08"
+  },
   "generated_from": "backend.fixtures.mock_summary",
   "privacy": {
     "stores_prompt_content": false,

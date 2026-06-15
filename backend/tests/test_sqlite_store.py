@@ -10,6 +10,7 @@ from backend.storage import (
     initialize_schema,
     list_sources,
     query_allowance_windows,
+    query_cost_summary,
     query_cost_total_usd,
     query_daily_summary,
     query_daily_trend,
@@ -19,6 +20,7 @@ from backend.storage import (
     record_cost_records,
     record_sync_run,
     record_usage_events,
+    replace_allowance_window_for_source_kind,
     replace_allowance_windows,
     upsert_source,
 )
@@ -127,6 +129,31 @@ def test_allowance_windows_preserve_unavailable_without_fake_remaining():
         )
 
 
+def test_replace_allowance_window_for_source_kind_preserves_other_sources():
+    connection = memory_connection()
+
+    replace_allowance_windows(connection, mock_allowance_windows())
+    replace_allowance_window_for_source_kind(
+        connection,
+        AllowanceWindow(
+            source_kind="codex",
+            source_id="codex:manual_allowance",
+            status="manual",
+            unit="tokens",
+            limit_amount=100000,
+            reset_at="2026-06-21T00:00:00Z",
+        ),
+    )
+    windows = query_allowance_windows(connection)
+
+    assert [
+        window.source_id
+        for window in windows
+        if window.source_kind == "codex"
+    ] == ["codex:manual_allowance"]
+    assert any(window.source_kind == "claude_code" for window in windows)
+
+
 def test_cost_queries_return_none_when_cost_data_is_unavailable():
     connection = memory_connection()
     record_usage_events(connection, mock_usage_events())
@@ -171,6 +198,73 @@ def test_cost_records_do_not_count_as_usage_events():
             cost_usd=1.25,
             currency=None,
         )
+
+
+def test_cost_summary_groups_provider_totals_without_raw_ids():
+    connection = memory_connection()
+
+    record_cost_records(
+        connection,
+        [
+            CostBucketRecord(
+                day_utc="2026-06-14",
+                source_kind="openai_api_cost",
+                source_id="openai_api_cost:admin_api",
+                project_id="project_hash",
+                api_key_id="key_hash",
+                cost_usd=1.25,
+                event_count=2,
+            ),
+            CostBucketRecord(
+                day_utc="2026-06-14",
+                source_kind="openai_api_cost",
+                source_id="openai_api_cost:admin_api",
+                model="gpt-5.5",
+                project_id="project_hash",
+                api_key_id="key_hash_2",
+                cost_usd=0.75,
+                event_count=3,
+            ),
+        ],
+    )
+
+    assert query_cost_summary(connection, "2026-06-08", "2026-06-14") == {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "total_usd": 2.0,
+        "by_source": {
+            "openai_api_cost": {
+                "total_usd": 2.0,
+                "bucket_count": 2,
+                "event_count": 5,
+            },
+        },
+    }
+
+
+def test_cost_summary_excludes_non_api_cost_sources():
+    connection = memory_connection()
+
+    record_usage_events(
+        connection,
+        [
+            UsageEvent(
+                source_kind="github_copilot",
+                source_id="github_copilot:local",
+                started_at="2026-06-14T01:00:00Z",
+                total_tokens=100,
+                confidence="official",
+                cost_usd=0.01,
+            )
+        ],
+    )
+
+    assert query_cost_summary(connection, "2026-06-08", "2026-06-14") == {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "total_usd": None,
+        "by_source": {},
+    }
 
 
 def test_refresh_state_reports_never_refreshed_before_sync_runs():

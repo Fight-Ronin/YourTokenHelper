@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 from backend.core.aggregation import RollingWindowSummary, UsageSummary, add_totals
 from backend.core.models import (
+    API_COST_SOURCE_KINDS,
     CONFIDENCE_VALUES,
     SOURCE_KINDS,
     AllowanceWindow,
@@ -287,37 +288,19 @@ def replace_allowance_windows(
     with connection:
         connection.execute("DELETE FROM allowance_windows")
         for window in windows:
-            connection.execute(
-                """
-                INSERT INTO allowance_windows (
-                    source_kind,
-                    source_id,
-                    status,
-                    unit,
-                    window_start,
-                    window_end,
-                    reset_at,
-                    limit_amount,
-                    used_amount,
-                    remaining_amount,
-                    note
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    window.source_kind,
-                    window.source_id,
-                    window.status,
-                    window.unit,
-                    window.window_start,
-                    window.window_end,
-                    window.reset_at,
-                    window.limit_amount,
-                    window.used_amount,
-                    window.remaining_amount,
-                    window.note,
-                ),
-            )
+            _insert_allowance_window(connection, window)
+
+
+def replace_allowance_window_for_source_kind(
+    connection: sqlite3.Connection,
+    window: AllowanceWindow,
+) -> None:
+    with connection:
+        connection.execute(
+            "DELETE FROM allowance_windows WHERE source_kind = ?",
+            (window.source_kind,),
+        )
+        _insert_allowance_window(connection, window)
 
 
 def query_allowance_windows(connection: sqlite3.Connection) -> list[AllowanceWindow]:
@@ -428,6 +411,45 @@ def query_cost_total_usd(
     if row["bucket_count"] == 0:
         return None
     return float(row["cost_usd"])
+
+
+def query_cost_summary(
+    connection: sqlite3.Connection,
+    start_day_utc: str,
+    end_day_utc: str,
+) -> dict[str, Any]:
+    start_day, end_day = _validate_day_range(start_day_utc, end_day_utc)
+    source_placeholders = ", ".join("?" for _ in API_COST_SOURCE_KINDS)
+    rows = connection.execute(
+        f"""
+        SELECT
+            source_kind,
+            COUNT(*) AS bucket_count,
+            SUM(event_count) AS event_count,
+            SUM(cost_usd) AS total_usd
+        FROM cost_buckets
+        WHERE day_utc BETWEEN ? AND ?
+            AND source_kind IN ({source_placeholders})
+        GROUP BY source_kind
+        ORDER BY source_kind
+        """,
+        (start_day, end_day, *API_COST_SOURCE_KINDS),
+    ).fetchall()
+    by_source = {
+        row["source_kind"]: {
+            "total_usd": float(row["total_usd"]),
+            "bucket_count": int(row["bucket_count"]),
+            "event_count": int(row["event_count"]),
+        }
+        for row in rows
+    }
+    total_usd = sum(source["total_usd"] for source in by_source.values())
+    return {
+        "window_start": start_day,
+        "window_end": end_day,
+        "total_usd": total_usd if rows else None,
+        "by_source": by_source,
+    }
 
 
 def record_sync_run(
@@ -614,6 +636,43 @@ def _record_usage_event(connection: sqlite3.Connection, event: UsageEvent) -> No
                 event.cost_usd,
             ),
         )
+
+
+def _insert_allowance_window(
+    connection: sqlite3.Connection,
+    window: AllowanceWindow,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO allowance_windows (
+            source_kind,
+            source_id,
+            status,
+            unit,
+            window_start,
+            window_end,
+            reset_at,
+            limit_amount,
+            used_amount,
+            remaining_amount,
+            note
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            window.source_kind,
+            window.source_id,
+            window.status,
+            window.unit,
+            window.window_start,
+            window.window_end,
+            window.reset_at,
+            window.limit_amount,
+            window.used_amount,
+            window.remaining_amount,
+            window.note,
+        ),
+    )
 
 
 def _record_cost_record(connection: sqlite3.Connection, record: CostBucketRecord) -> None:

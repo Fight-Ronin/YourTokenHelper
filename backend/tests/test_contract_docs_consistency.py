@@ -456,7 +456,11 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "setLastRefreshResults" in app_text
     assert "setStartupStorageReadState" in app_text
     assert "handleRefreshSummary(outcome.result)" in app_text
-    assert "secondary source not connected" in app_text
+    assert "cost_summary" in app_text
+    assert "Stored Cost Breakdown" in app_text
+    assert "No stored cost data" in app_text
+    assert "personal API key" in app_text
+    assert "secondary source not connected" not in app_text
     assert "ManualRefreshMock" in app_text
     assert "manualRefreshBridgeLabel" in app_text
     assert "manualRefreshNeedsLabel" in app_text
@@ -524,10 +528,14 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "canRun: false" in setup_text
     assert 'blockedReason: "explicit_roots_and_tauri_wiring"' in setup_text
     assert "Manual Refresh" in app_text
-    assert "Manual refresh mock state" in app_text
-    assert "<span>Needs</span>" in app_text
-    assert "<span>Bridge</span>" in app_text
-    assert "label={bridgeLabel}" in app_text
+    assert "Manual refresh state" in app_text
+    assert "ManualRefreshMock" in app_text
+    assert "RefreshSummaryItem" in app_text
+    assert 'label="Ready check"' in app_text
+    assert "detail={bridgeLabel}" in app_text
+    assert "StatePanel" not in app_text
+    assert "First Launch" not in app_text
+    assert "No Local Sources" not in app_text
     assert "{ hasTauriWiring: true }" in app_text
     assert "handleManualRefresh" in app_text
     assert "manualRefreshStatusLabel" in app_text

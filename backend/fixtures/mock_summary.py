@@ -32,6 +32,7 @@ def build_mock_summary_payload() -> dict[str, Any]:
             "events_seen": 0,
         },
         "summary": usage_summary_to_dict(aggregate_usage(mock_usage_events())),
+        "cost_summary": mock_cost_summary(),
         "allowance_windows": [
             allowance_window_to_dict(window)
             for window in mock_allowance_windows()
@@ -109,6 +110,21 @@ def mock_usage_events() -> list[UsageEvent]:
             cost_usd=1.03,
         ),
     ]
+
+
+def mock_cost_summary() -> dict[str, Any]:
+    return {
+        "window_start": "2026-06-08",
+        "window_end": "2026-06-14",
+        "total_usd": 1.03,
+        "by_source": {
+            "openai_api_cost": {
+                "total_usd": 1.03,
+                "bucket_count": 1,
+                "event_count": 1,
+            },
+        },
+    }
 
 
 def mock_allowance_windows() -> list[AllowanceWindow]:

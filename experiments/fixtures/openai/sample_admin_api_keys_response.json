@@ -1,0 +1,42 @@
+{
+  "admin_api_keys": {
+    "object": "list",
+    "data": [
+      {
+        "object": "organization.admin_api_key",
+        "id": "key_fixture_admin_alpha",
+        "name": "Main Admin Key",
+        "redacted_value": "sk-admin...alpha",
+        "created_at": 1711471533,
+        "last_used_at": 1711471534,
+        "owner": {
+          "type": "service_account",
+          "object": "organization.service_account",
+          "id": "sa_fixture_owner",
+          "name": "Usage Monitor Service Account",
+          "created_at": 1711471533,
+          "role": "member"
+        }
+      },
+      {
+        "object": "organization.admin_api_key",
+        "id": "key_fixture_admin_beta",
+        "name": "Backup Admin Key",
+        "redacted_value": "sk-admin...beta",
+        "created_at": 1711557933,
+        "last_used_at": null,
+        "owner": {
+          "type": "user",
+          "object": "organization.user",
+          "id": "user_fixture_owner",
+          "name": "Fixture Owner",
+          "created_at": 1711557933,
+          "role": "owner"
+        }
+      }
+    ],
+    "first_id": "key_fixture_admin_alpha",
+    "last_id": "key_fixture_admin_beta",
+    "has_more": false
+  }
+}

@@ -4,8 +4,6 @@ import pytest
 
 from backend.core import ContractError
 from backend.sources import (
-    ClaudeCodeFixtureAdapter,
-    CodexFixtureAdapter,
     ManualStatusAdapter,
     SourceState,
     sync_source_adapter,
@@ -39,29 +37,6 @@ def test_source_state_rejects_unknown_values():
             status="secretly_ready",
             confidence="local_exact",
         )
-
-
-def test_codex_and_claude_fixture_adapters_sync_only_aggregate_events():
-    connection = memory_connection()
-
-    codex = sync_source_adapter(
-        connection,
-        CodexFixtureAdapter(),
-        started_at="2026-06-14T00:00:00Z",
-    )
-    claude = sync_source_adapter(
-        connection,
-        ClaudeCodeFixtureAdapter(),
-        started_at="2026-06-14T00:02:00Z",
-    )
-    summary = query_daily_summary(connection, "2026-06-14")
-
-    assert codex.events_seen == 1
-    assert claude.events_seen == 1
-    assert summary.event_count == 2
-    assert summary.totals.total_tokens == 7570
-    assert summary.by_source["codex"].total_tokens == 2540
-    assert summary.by_source["claude_code"].total_tokens == 5030
 
 
 def test_non_ready_manual_status_adapters_record_source_state_without_events():

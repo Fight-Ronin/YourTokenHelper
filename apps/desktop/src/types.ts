@@ -40,6 +40,19 @@ export type TokenTotals = {
   total_tokens: number;
 };
 
+export type CostSourceTotals = {
+  total_usd: number;
+  bucket_count: number;
+  event_count: number;
+};
+
+export type CostSummary = {
+  window_start: string | null;
+  window_end: string | null;
+  total_usd: number | null;
+  by_source: Partial<Record<ApiCostSourceKind, CostSourceTotals>>;
+};
+
 export type UsageSummary = {
   event_count: number;
   totals: TokenTotals;
@@ -93,6 +106,7 @@ export type MockSummaryPayload = {
   };
   refresh_state: RefreshState;
   summary: UsageSummary;
+  cost_summary: CostSummary;
   allowance_windows: AllowanceWindow[];
   source_states: SourceState[];
 };

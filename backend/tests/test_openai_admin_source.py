@@ -2,6 +2,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from backend.core import ContractError
 from backend.sources import (
     OPENAI_ADMIN_SOURCE_ID,
     openai_admin_cost_records_from_payload,
@@ -115,6 +116,33 @@ def test_openai_admin_payload_syncs_usage_costs_and_source_health():
     ]
 
 
+def test_openai_admin_sync_rejects_missing_endpoint_envelopes_before_replacement():
+    connection = memory_connection()
+    sync_openai_admin_usage_cost_payload(
+        connection,
+        fixture_payload(),
+        end_day_utc="2026-06-13",
+        started_at="2026-06-14T00:00:00Z",
+    )
+
+    try:
+        sync_openai_admin_usage_cost_payload(
+            connection,
+            {},
+            end_day_utc="2026-06-13",
+            started_at="2026-06-14T01:00:00Z",
+        )
+    except ContractError as exc:
+        assert "OpenAI Admin usage endpoint payload is required" in str(exc)
+    else:
+        raise AssertionError("expected missing endpoint envelope to fail")
+
+    summary = query_rolling_7d_summary(connection, "2026-06-13")
+    assert summary.event_count == 109
+    assert summary.by_source["openai_api_cost"].total_tokens == 43100
+    assert query_cost_total_usd(connection, "2026-06-12", "2026-06-13") == 1.03
+
+
 def test_openai_admin_permission_denied_records_recoverable_source_state():
     connection = memory_connection()
     payload = {
@@ -155,3 +183,35 @@ def test_openai_admin_sync_keeps_usage_when_costs_are_permission_denied():
     assert result.cost_records_seen == 0
     assert query_rolling_7d_summary(connection, "2026-06-13").event_count == 109
     assert query_cost_total_usd(connection, "2026-06-12", "2026-06-13") is None
+
+
+def test_openai_admin_sync_rejects_invalid_bucket_start_time():
+    connection = memory_connection()
+    payload = {
+        "usage": {
+            "data": [
+                {
+                    "start_time": 999999999999999999999999,
+                    "results": [
+                        {
+                            "input_tokens": 10,
+                            "output_tokens": 2,
+                        }
+                    ],
+                }
+            ]
+        },
+        "costs": {"data": []},
+    }
+
+    try:
+        sync_openai_admin_usage_cost_payload(
+            connection,
+            payload,
+            end_day_utc="2026-06-13",
+            started_at="2026-06-14T00:00:00Z",
+        )
+    except ContractError as exc:
+        assert "OpenAI Admin bucket start_time is invalid" in str(exc)
+    else:
+        raise AssertionError("expected invalid bucket start_time to fail")
