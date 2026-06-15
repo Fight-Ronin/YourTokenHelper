@@ -8,6 +8,9 @@ export const DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES = 15;
 export type SavedSourceRootsPayload = {
   codex_jsonl_root?: string;
   claude_code_jsonl_root?: string;
+  cursor_jsonl_root?: string;
+  gemini_cli_jsonl_root?: string;
+  github_copilot_jsonl_root?: string;
   auto_refresh_enabled: boolean;
   auto_refresh_interval_minutes: number;
 };
@@ -41,21 +44,17 @@ export function sourceRootPreferencesFromSaved(
   saved: Partial<SavedSourceRootsPayload>
 ): SourceRootPreferences {
   const rootDraft: ExplicitRootSelectionDraft = {};
-  const codexRoot = normalizeRoot(saved.codex_jsonl_root);
-  const claudeCodeRoot = normalizeRoot(saved.claude_code_jsonl_root);
-  if (codexRoot) {
-    rootDraft.codexJsonlRoot = codexRoot;
-  }
-  if (claudeCodeRoot) {
-    rootDraft.claudeCodeJsonlRoot = claudeCodeRoot;
-  }
-
-  const hasBothRoots = Boolean(rootDraft.codexJsonlRoot && rootDraft.claudeCodeJsonlRoot);
+  assignRootDraftValue(rootDraft, "codexJsonlRoot", saved.codex_jsonl_root);
+  assignRootDraftValue(rootDraft, "claudeCodeJsonlRoot", saved.claude_code_jsonl_root);
+  assignRootDraftValue(rootDraft, "cursorJsonlRoot", saved.cursor_jsonl_root);
+  assignRootDraftValue(rootDraft, "geminiCliJsonlRoot", saved.gemini_cli_jsonl_root);
+  assignRootDraftValue(rootDraft, "githubCopilotJsonlRoot", saved.github_copilot_jsonl_root);
+  const hasAnyRoot = hasAnySourceRoot(rootDraft);
 
   return {
     rootDraft,
-    hasSavedRoots: Boolean(rootDraft.codexJsonlRoot || rootDraft.claudeCodeJsonlRoot),
-    autoRefreshEnabled: Boolean(saved.auto_refresh_enabled) && hasBothRoots,
+    hasSavedRoots: hasAnyRoot,
+    autoRefreshEnabled: Boolean(saved.auto_refresh_enabled) && hasAnyRoot,
     autoRefreshIntervalMinutes: normalizeAutoRefreshIntervalMinutes(
       saved.auto_refresh_interval_minutes
     )
@@ -68,9 +67,12 @@ export function savedSourceRootsPayloadFromPreferences(
   return {
     codex_jsonl_root: normalizeRoot(preferences.rootDraft.codexJsonlRoot),
     claude_code_jsonl_root: normalizeRoot(preferences.rootDraft.claudeCodeJsonlRoot),
+    cursor_jsonl_root: normalizeRoot(preferences.rootDraft.cursorJsonlRoot),
+    gemini_cli_jsonl_root: normalizeRoot(preferences.rootDraft.geminiCliJsonlRoot),
+    github_copilot_jsonl_root: normalizeRoot(preferences.rootDraft.githubCopilotJsonlRoot),
     auto_refresh_enabled:
       preferences.autoRefreshEnabled &&
-      Boolean(preferences.rootDraft.codexJsonlRoot && preferences.rootDraft.claudeCodeJsonlRoot),
+      hasAnySourceRoot(preferences.rootDraft),
     auto_refresh_interval_minutes: normalizeAutoRefreshIntervalMinutes(
       preferences.autoRefreshIntervalMinutes
     )
@@ -149,7 +151,7 @@ export function headerRefreshButtonTitle({
     return "Refreshing local aggregate";
   }
   if (!canInvoke) {
-    return "Save Codex and Claude roots in Sources first";
+    return "Save at least one source root in Sources first";
   }
   if (!rootsAreSaved) {
     return "Save roots before using header refresh";
@@ -173,4 +175,25 @@ export function normalizeAutoRefreshIntervalMinutes(value: unknown) {
 function normalizeRoot(value: string | undefined) {
   const normalized = value?.trim();
   return normalized || undefined;
+}
+
+function assignRootDraftValue(
+  draft: ExplicitRootSelectionDraft,
+  field: keyof ExplicitRootSelectionDraft,
+  value: string | undefined
+) {
+  const root = normalizeRoot(value);
+  if (root) {
+    draft[field] = root;
+  }
+}
+
+function hasAnySourceRoot(draft: ExplicitRootSelectionDraft) {
+  return Boolean(
+    normalizeRoot(draft.codexJsonlRoot) ||
+      normalizeRoot(draft.claudeCodeJsonlRoot) ||
+      normalizeRoot(draft.cursorJsonlRoot) ||
+      normalizeRoot(draft.geminiCliJsonlRoot) ||
+      normalizeRoot(draft.githubCopilotJsonlRoot)
+  );
 }

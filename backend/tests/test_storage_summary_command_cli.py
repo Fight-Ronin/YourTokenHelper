@@ -54,6 +54,8 @@ def test_load_storage_summary_cli_reads_file_backed_refresh_database_without_pat
     assert text.endswith("\n")
     assert payload["summary"]["totals"]["total_tokens"] == 7570
     assert payload["generated_from"] == "backend.storage.summary_payload"
+    assert payload["refresh_state"]["last_status"] == "succeeded"
+    assert payload["refresh_state"]["successful_source_count"] == 2
     assert "refresh_results" not in payload
     assert str(database_path) not in text
     assert "experiments/fixtures" not in text

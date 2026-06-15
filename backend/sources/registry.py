@@ -59,7 +59,7 @@ def setup_status_adapter(source_kind: str) -> ManualStatusAdapter:
             source_id="cursor:manual",
             status="manual_only",
             confidence="manual",
-            message="Cursor remains manual until a stable aggregate source is verified.",
+            message="Cursor supports explicit usage export import; choose a report root when available.",
         )
     if source_kind == "gemini_cli":
         return ManualStatusAdapter(
@@ -67,7 +67,7 @@ def setup_status_adapter(source_kind: str) -> ManualStatusAdapter:
             source_id="gemini_cli:setup",
             status="setup_required",
             confidence="unavailable",
-            message="Gemini CLI needs explicit telemetry or export setup before sync.",
+            message="Gemini CLI supports explicit telemetry import after telemetry/export setup.",
         )
     if source_kind == "github_copilot":
         return ManualStatusAdapter(
@@ -75,6 +75,6 @@ def setup_status_adapter(source_kind: str) -> ManualStatusAdapter:
             source_id="github_copilot:official_report",
             status="official_report",
             confidence="official",
-            message="Use official report import; personal local token parsing is not ready.",
+            message="GitHub Copilot supports official usage metrics report import.",
         )
     raise ContractError(f"Unsupported primary source setup kind: {source_kind}")

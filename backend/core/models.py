@@ -65,6 +65,7 @@ class UsageEvent:
     reasoning_output_tokens: int | None = None
     cost_usd: float | None = None
     usage_credits: float | None = None
+    request_count: int = 1
     session_id: str | None = None
     workspace_id: str | None = None
     project_id: str | None = None
@@ -93,6 +94,7 @@ class UsageEvent:
             raise ContractError("cost_usd must be non-negative")
         if self.usage_credits is not None and self.usage_credits < 0:
             raise ContractError("usage_credits must be non-negative")
+        validate_non_negative_int("request_count", self.request_count)
 
     @property
     def day_utc(self) -> str:

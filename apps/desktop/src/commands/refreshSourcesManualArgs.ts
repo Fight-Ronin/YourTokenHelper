@@ -2,6 +2,9 @@ export type RefreshSourcesManualArgs = {
   end_day_utc: string;
   codex_jsonl_root?: string;
   claude_code_jsonl_root?: string;
+  cursor_jsonl_root?: string;
+  gemini_cli_jsonl_root?: string;
+  github_copilot_jsonl_root?: string;
   started_at?: string;
 };
 
@@ -9,6 +12,9 @@ export type RefreshSourcesManualDraft = {
   endDayUtc: string;
   codexJsonlRoot?: string;
   claudeCodeJsonlRoot?: string;
+  cursorJsonlRoot?: string;
+  geminiCliJsonlRoot?: string;
+  githubCopilotJsonlRoot?: string;
   startedAt?: string;
 };
 
@@ -19,6 +25,17 @@ export type RefreshCommandErrorPayload = {
     field?: keyof RefreshSourcesManualArgs;
   };
 };
+
+const REFRESH_ROOT_FIELDS: Array<{
+  arg: Exclude<keyof RefreshSourcesManualArgs, "end_day_utc" | "started_at">;
+  draft: Exclude<keyof RefreshSourcesManualDraft, "endDayUtc" | "startedAt">;
+}> = [
+  { arg: "codex_jsonl_root", draft: "codexJsonlRoot" },
+  { arg: "claude_code_jsonl_root", draft: "claudeCodeJsonlRoot" },
+  { arg: "cursor_jsonl_root", draft: "cursorJsonlRoot" },
+  { arg: "gemini_cli_jsonl_root", draft: "geminiCliJsonlRoot" },
+  { arg: "github_copilot_jsonl_root", draft: "githubCopilotJsonlRoot" }
+];
 
 export type RefreshSourcesManualArgsBuildResult =
   | {
@@ -43,8 +60,9 @@ export function buildRefreshSourcesManualArgs(
   const args: RefreshSourcesManualArgs = {
     end_day_utc: endDayUtc
   };
-  assignOptionalString(args, "codex_jsonl_root", draft.codexJsonlRoot);
-  assignOptionalString(args, "claude_code_jsonl_root", draft.claudeCodeJsonlRoot);
+  for (const field of REFRESH_ROOT_FIELDS) {
+    assignOptionalString(args, field.arg, draft[field.draft]);
+  }
   assignOptionalString(args, "started_at", draft.startedAt);
 
   return {
@@ -60,14 +78,8 @@ export function buildGatedRefreshSourcesManualArgs(
   if (!result.ok) {
     return result;
   }
-  if (!result.args.codex_jsonl_root) {
-    return invalidRefreshArgs("codex_jsonl_root", "codex_jsonl_root is required for manual refresh");
-  }
-  if (!result.args.claude_code_jsonl_root) {
-    return invalidRefreshArgs(
-      "claude_code_jsonl_root",
-      "claude_code_jsonl_root is required for manual refresh"
-    );
+  if (!REFRESH_ROOT_FIELDS.some((field) => Boolean(result.args[field.arg]))) {
+    return invalidRefreshArgs("codex_jsonl_root", "at least one source root is required for manual refresh");
   }
   return result;
 }

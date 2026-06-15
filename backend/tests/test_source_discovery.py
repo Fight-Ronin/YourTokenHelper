@@ -90,10 +90,29 @@ def test_explicit_jsonl_discovery_preserves_custom_source_id():
     assert discovered.state.source_id == "codex:portable-fixture"
 
 
-def test_explicit_jsonl_discovery_rejects_sources_without_mature_adapter():
-    with pytest.raises(ContractError, match="does not have a mature"):
+def test_explicit_jsonl_discovery_supports_usage_import_sources():
+    discovered = {
+        item.source_kind: item
+        for item in discover_jsonl_sources(
+            [
+                JsonlSourceCandidate("cursor", FIXTURE_ROOT / "cursor"),
+                JsonlSourceCandidate("gemini_cli", FIXTURE_ROOT / "gemini_cli"),
+                JsonlSourceCandidate("github_copilot", FIXTURE_ROOT / "github_copilot"),
+            ]
+        )
+    }
+
+    assert discovered["cursor"].state.status == "ready"
+    assert discovered["cursor"].state.confidence == "local_estimated"
+    assert discovered["gemini_cli"].state.status == "ready"
+    assert discovered["github_copilot"].state.status == "ready"
+    assert discovered["github_copilot"].state.confidence == "official"
+
+
+def test_explicit_jsonl_discovery_rejects_unknown_sources_without_adapter():
+    with pytest.raises(ContractError, match="does not have a supported"):
         discover_jsonl_source(
-            JsonlSourceCandidate("gemini_cli", FIXTURE_ROOT / "gemini_cli")
+            JsonlSourceCandidate("unknown_source", FIXTURE_ROOT / "gemini_cli")
         )
 
 

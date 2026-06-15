@@ -4,6 +4,7 @@ import {
   dashboardQualityLabel,
   emptyTokenTotals,
   latestSummaryDay,
+  refreshRecencyLabel,
   sourceUsageRows,
   sourceTotalsForDay,
   startupStorageStatusLabel
@@ -15,6 +16,14 @@ const dashboardPayload = buildDashboardSummaryFromRefresh(
 
 assert(dashboardPayload.generated_from === "backend.sources.refresh", "live dashboard should keep refresh provenance");
 assert(!dashboardPayload.privacy.synthetic, "live dashboard should not be labeled synthetic");
+assert(
+  dashboardPayload.refresh_state.last_status === "succeeded",
+  "live dashboard should carry refresh recency status"
+);
+assert(
+  dashboardPayload.refresh_state.successful_source_count === 5,
+  "live dashboard should carry ready source count"
+);
 assert(dashboardPayload.summary.by_source.codex.total_tokens === 2540, "Codex totals should survive normalization");
 assert(
   dashboardPayload.summary.by_source.claude_code.total_tokens === 5030,
@@ -69,8 +78,21 @@ assertDeepEqual(
   sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-14"), ["codex", "claude_code"]).map(
     (row) => row.sourceKind
   ),
-  ["claude_code", "codex"],
+  ["claude_code", "codex", "cursor", "github_copilot", "gemini_cli"],
   "Source Usage rows should hide unavailable zero-token sources after local refresh"
+);
+const liveUsageRows = sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-14"), ["codex", "claude_code"]);
+assert(
+  liveUsageRows.every((row) => row.progress.kind === "usage_share"),
+  "Source Usage rows should use consumption share bars when no allowance windows are available"
+);
+assert(
+  Math.round(liveUsageRows.find((row) => row.sourceKind === "claude_code")?.progress.percent ?? 0) === 30,
+  "Source Usage rows should still show non-zero usage share when limits are unavailable"
+);
+assert(
+  sourceUsageRows(dashboardPayload.summary.by_source, []).every((row) => row.sourceKind !== "openai_api_cost"),
+  "Source Usage rows should exclude API cost providers"
 );
 assertDeepEqual(
   sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-13"), ["codex"]).map((row) => row.sourceKind),
@@ -93,6 +115,148 @@ assertDeepEqual(
   sourceUsageRows(totalsWithConfiguredLowUsage, ["codex"]).map((row) => row.sourceKind),
   ["codex", "cursor"],
   "configured roots should be grouped above unconfigured sources with usage"
+);
+const quotaRows = sourceUsageRows(
+  {
+    ...sourceTotalsForDay(dashboardPayload, "2026-06-13"),
+    codex: {
+      ...emptyTokenTotals(),
+      total_tokens: 25
+    },
+    claude_code: {
+      ...emptyTokenTotals(),
+      total_tokens: 500
+    },
+    cursor: {
+      ...emptyTokenTotals(),
+      total_tokens: 100
+    }
+  },
+  [],
+  [
+    {
+      source_kind: "codex",
+      source_id: "codex:test",
+      status: "manual",
+      unit: "tokens",
+      remaining_amount: 75
+    },
+    {
+      source_kind: "claude_code",
+      source_id: "claude_code:test",
+      status: "derived",
+      unit: "credits",
+      used_amount: 5,
+      remaining_amount: 15
+    },
+    {
+      source_kind: "cursor",
+      source_id: "cursor:test",
+      status: "unavailable",
+      unit: "unknown"
+    }
+  ]
+);
+assertDeepEqual(
+  quotaRows.find((row) => row.sourceKind === "codex")?.progress,
+  {
+    kind: "quota",
+    percent: 25,
+    usedAmount: 25,
+    limitAmount: 100,
+    unit: "tokens",
+    status: "manual"
+  },
+  "token allowance progress should use token totals when used_amount is not stored"
+);
+assertDeepEqual(
+  quotaRows.find((row) => row.sourceKind === "claude_code")?.progress,
+  {
+    kind: "quota",
+    percent: 25,
+    usedAmount: 5,
+    limitAmount: 20,
+    unit: "credits",
+    status: "derived"
+  },
+  "non-token allowance progress should use allowance units without converting tokens"
+);
+assertDeepEqual(
+  quotaRows.find((row) => row.sourceKind === "cursor")?.progress,
+  {
+    kind: "usage_share",
+    percent: 16
+  },
+  "unavailable allowance should render usage share instead of a fake quota bar"
+);
+const tinyUsageRows = sourceUsageRows({
+  ...sourceTotalsForDay(dashboardPayload, "2026-06-13"),
+  codex: {
+    ...emptyTokenTotals(),
+    total_tokens: 1
+  },
+  claude_code: {
+    ...emptyTokenTotals(),
+    total_tokens: 999
+  }
+});
+assert(
+  tinyUsageRows.find((row) => row.sourceKind === "codex")?.progress.percent === 0.1,
+  "usage share percent should keep the true value instead of using the visual minimum bar width"
+);
+assertDeepEqual(
+  sourceUsageRows(
+    sourceTotalsForDay(dashboardPayload, "2026-06-13"),
+    ["codex"],
+    [
+      {
+        source_kind: "codex",
+        source_id: "codex:test",
+        status: "manual",
+        unit: "tokens",
+        remaining_amount: 100
+      }
+    ]
+  ).find((row) => row.sourceKind === "codex")?.progress,
+  {
+    kind: "quota",
+    percent: 0,
+    usedAmount: 0,
+    limitAmount: 100,
+    unit: "tokens",
+    status: "manual"
+  },
+  "zero token usage with a token allowance should still render 0% quota progress"
+);
+assertDeepEqual(
+  sourceUsageRows(
+    {
+      ...sourceTotalsForDay(dashboardPayload, "2026-06-13"),
+      codex: {
+        ...emptyTokenTotals(),
+        total_tokens: 125
+      }
+    },
+    [],
+    [
+      {
+        source_kind: "codex",
+        source_id: "codex:test",
+        status: "manual",
+        unit: "tokens",
+        limit_amount: 100
+      }
+    ]
+  ).find((row) => row.sourceKind === "codex")?.progress,
+  {
+    kind: "quota",
+    percent: 125,
+    usedAmount: 125,
+    limitAmount: 100,
+    unit: "tokens",
+    status: "manual"
+  },
+  "quota percent should keep the true over-limit value while the UI caps only the bar width"
 );
 
 const copiedDailyTotals = sourceTotalsForDay(dashboardPayload, "2026-06-14");
@@ -123,6 +287,62 @@ assert(startupStorageStatusLabel({ phase: "loaded" }) === "Loaded", "loaded star
 assert(
   startupStorageStatusLabel({ phase: "unavailable", message: "unavailable" }) === "Unavailable",
   "unavailable startup readback should be labeled"
+);
+assertDeepEqual(
+  refreshRecencyLabel(dashboardPayload.refresh_state, new Date("2026-06-14T00:10:00Z")),
+  {
+    label: "Fresh",
+    detail: "refreshed 10 min ago across 5 ready sources",
+    tone: "good"
+  },
+  "recent successful refresh should be fresh"
+);
+assertDeepEqual(
+  refreshRecencyLabel(dashboardPayload.refresh_state, new Date("2026-06-14T01:01:00Z")),
+  {
+    label: "Stale",
+    detail: "refreshed 1 hr ago across 5 ready sources",
+    tone: "warning"
+  },
+  "older successful refresh should be stale"
+);
+assertDeepEqual(
+  refreshRecencyLabel(
+    {
+      last_attempt_at: null,
+      last_success_at: null,
+      last_status: "never_refreshed",
+      successful_source_count: 0,
+      attempted_source_count: 0,
+      events_seen: 0
+    },
+    new Date("2026-06-14T01:01:00Z")
+  ),
+  {
+    label: "Never refreshed",
+    detail: "No successful local aggregate refresh yet",
+    tone: "warning"
+  },
+  "missing successful refresh should not pretend the aggregate is fresh"
+);
+assertDeepEqual(
+  refreshRecencyLabel(
+    {
+      last_attempt_at: "2026-06-14T00:00:00Z",
+      last_success_at: "2026-06-14T00:00:00Z",
+      last_status: "mock",
+      successful_source_count: 0,
+      attempted_source_count: 0,
+      events_seen: 0
+    },
+    new Date("2026-06-14T00:10:00Z")
+  ),
+  {
+    label: "Mock fixture",
+    detail: "Static contract data, not a local refresh",
+    tone: "neutral"
+  },
+  "mock payload should not be labeled as a live refresh"
 );
 
 const serialized = JSON.stringify(dashboardPayload);

@@ -268,6 +268,14 @@ h1 {
   justify-content: space-between;
 }
 
+.stack-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
 .bar-track {
   height: 8px;
   border-radius: 999px;
@@ -313,34 +321,12 @@ h1 {
   font-weight: 600;
 }
 
-.trust-row {
-  display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 10px;
-  color: #0f766e;
-}
-
-.trust-row strong {
-  display: block;
-  color: #15171a;
-  font-size: 13px;
-}
-
-.trust-row span {
-  color: #6b7280;
-  display: block;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.issue-list,
 .source-list {
   display: grid;
   gap: 8px;
   margin-top: 14px;
 }
 
-.issue,
 .source-row {
   min-height: 34px;
   border-top: 1px solid #e5e7eb;

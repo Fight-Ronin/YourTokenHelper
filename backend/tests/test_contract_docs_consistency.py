@@ -60,17 +60,17 @@ def test_pr5_doc_keeps_manual_refresh_promotion_guardrails():
     assert "`canRun: false`" in text
     assert "registered `refresh_sources_manual` command" in text
     assert "explicit user action" in text
-    assert "explicit user-selected roots" in text
-    assert "Explicit root selection exists for Codex and Claude Code" in text
+    assert "user-selected/import roots" in text
+    assert "Explicit root selection exists for at least one primary source" in text
     assert "selected labels" in text
     assert "aggregate-only" in text
     assert "must not include prompt text" in text
     assert "source roots, local paths, filenames" in text
     assert "source roots, paths, filenames" in text
-    assert "Cursor remains manual/status-only" in text
-    assert "Gemini CLI remains setup-required" in text
-    assert "GitHub Copilot remains official-report/manual" in text
-    assert "Cursor, Gemini CLI, and GitHub Copilot remain status-only" in text
+    assert "Cursor support is limited to explicit usage-export import" in text
+    assert "Gemini CLI support is limited to explicit telemetry/export import" in text
+    assert "GitHub Copilot support is limited to explicit official metrics report import" in text
+    assert "none may enable default local scanning or quota inference" in text
     assert "must not imply exact remaining usage" in text
     assert "must not be shown as zero cost" in text
     assert "Monthly stays" in text
@@ -85,9 +85,12 @@ def test_pr5_doc_keeps_manual_refresh_promotion_guardrails():
     assert "Synthetic Desktop Acceptance Smoke" in text
     assert "experiments/fixtures/local_sources/codex" in text
     assert "experiments/fixtures/local_sources/claude_code" in text
+    assert "experiments/fixtures/local_sources/cursor" in text
+    assert "experiments/fixtures/local_sources/gemini_cli" in text
+    assert "experiments/fixtures/local_sources/github_copilot" in text
     assert "payload.info.last_token_usage" in text
     assert "message.usage" in text
-    assert "Updated 7,570 aggregate tokens" in text
+    assert "Updated 17,040 aggregate tokens" in text
     assert "Restarting the desktop shell should load the saved aggregate" in text
     assert "explicit approval first" in text
 
@@ -115,7 +118,7 @@ def test_pr5_doc_records_handoff_status_without_claiming_ungated_live_wiring():
     assert "React UI now invokes it only through" in text
     assert "No default local path scanning" in text
     assert "No real local user directories are read without explicit roots" in text
-    assert "No Cursor, Gemini CLI, or GitHub Copilot local parser maturity" in text
+    assert "Cursor, Gemini CLI, and GitHub Copilot support only explicit usage import" in text
     assert "No OpenAI Admin/API cost sync in PR5" in text
 
 
@@ -124,7 +127,7 @@ def test_pr5_doc_records_implementation_status_matrix():
 
     assert "Implementation Status Matrix" in text
     assert "| Backend normalized event/storage contract | Ready |" in text
-    assert "| Codex and Claude Code explicit-root sync | Ready |" in text
+    assert "| Primary source explicit-root sync | Ready |" in text
     assert "| Backend manual refresh response boundary | Ready |" in text
     assert "| Backend JSON bridge boundary | Ready |" in text
     assert "| Backend stdin/stdout bridge | Ready |" in text
@@ -137,16 +140,16 @@ def test_pr5_doc_records_implementation_status_matrix():
     assert "| Refresh-to-dashboard handoff | Gated UI |" in text
     assert "| Last refresh metadata | Gated UI |" in text
     assert "explicitRootMockRows" in text
-    assert "| Cursor local parser | Status-only |" in text
-    assert "| Gemini CLI local parser | Status-only |" in text
-    assert "| GitHub Copilot local parser | Status-only |" in text
+    assert "| Cursor usage import | Ready |" in text
+    assert "| Gemini CLI telemetry import | Ready |" in text
+    assert "| GitHub Copilot official report import | Ready |" in text
     assert "| OpenAI Admin/API cost sync | Out of PR5 |" in text
     assert "empty-root default keeps the button disabled" in text
     assert "Live local aggregate" in text
     assert "keeps API cost unavailable instead of showing mock dollars" in text
     assert "source/status/confidence/events/sync-run metadata only" in text
     assert "no default path discovery" in text
-    assert "label-only, selected-explicit-root, no-local-parser" in text
+    assert "selected explicit roots, usage-export import" in text
     assert "no OS picker opens and no supplied root is rendered" in text
 
 
@@ -259,8 +262,8 @@ def test_desktop_command_contract_matches_primary_refresh_request_shape():
     assert "manualRefreshNeedsLabel" in setup_test_text
     assert "manualRefreshRootsLabel" in setup_text
     assert "manualRefreshRootsLabel" in setup_test_text
-    assert "Missing Codex, Claude Code" in setup_test_text
-    assert "Missing Codex" in setup_test_text
+    assert "No roots selected" in setup_test_text
+    assert "At least one import root" in setup_test_text
     assert "Codex, Claude Code" in setup_test_text
     assert "pathPolicyLabels" in setup_test_text
     assert "displayValue" in setup_test_text
@@ -351,7 +354,7 @@ def test_desktop_command_contract_matches_primary_refresh_request_shape():
     assert "payload.info.last_token_usage" in readme_text
     assert "message.usage" in readme_text
     assert "Automation must request explicit approval before running this GUI smoke" in readme_text
-    assert "Updated 7,570 aggregate tokens" in readme_text
+    assert "Updated 17,040 aggregate tokens" in readme_text
     assert "load_storage_summary" in readme_text
     assert "invokes only `refresh_sources_manual`" in pr5_text
     assert "never falls back to `source_refresh_summary_sample`" in pr5_text
@@ -461,7 +464,7 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "const bridgeLabel = manualRefreshBridgeLabel(readiness)" in app_text
     assert "const needsLabel = manualRefreshNeedsLabel(readiness)" in app_text
     assert "const rootsLabel = manualRefreshRootsLabel(readiness)" in app_text
-    assert "Missing ${missingLabels}" in setup_text
+    assert "No roots selected" in setup_text
     assert "LastRefreshResults" in app_text
     assert "Last Refresh" in app_text
     assert "Not run this session" in app_text
@@ -513,10 +516,10 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "displayValue" in setup_text
     assert "nextStep" in setup_text
     assert "missingRootLabels" not in app_text
-    assert "readiness.missingExplicitRoots" in setup_text
+    assert "readiness.configuredExplicitRoots" in setup_text
     assert "readiness.hasTauriWiring" in setup_text
     assert "canInvoke" in app_text
-    assert "const canRun = hasTauriWiring && missingExplicitRoots.length === 0" in setup_text
+    assert "const canRun = hasTauriWiring && configuredExplicitRoots.length > 0" in setup_text
     assert "blockedReason: canRun ? null : manualRefreshMockState.blockedReason" in setup_text
     assert "canRun: false" in setup_text
     assert 'blockedReason: "explicit_roots_and_tauri_wiring"' in setup_text
@@ -549,45 +552,45 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "refresh_sources_manual" in setup_text
     assert "Partial mock" not in setup_text
     assert "Blocked" in setup_text
-    assert "Manual refresh is disabled until explicit roots and Tauri wiring are ready" in setup_text
-    assert "Manual refresh is not wired in mock mode" in setup_text
+    assert "Manual refresh is disabled until at least one explicit root and Tauri wiring are ready" in setup_text
+    assert "Add at least one hidden source root" in setup_text
     assert "disabled={!canInvoke || isRunning}" in app_text
-    assert 'aria-label={canInvoke ? "Run gated manual refresh" : manualRefreshMockState.disabledAriaLabel}' in app_text
+    assert 'aria-label={canInvoke ? "Run manual refresh" : manualRefreshMockState.disabledAriaLabel}' in app_text
     assert 'title={canInvoke ? "Run production manual refresh" : manualRefreshMockState.disabledTitle}' in app_text
     assert "ExplicitRootsMock" in app_text
     assert "Explicit Roots" in app_text
     assert 'picker: "codex"' in setup_text
     assert 'picker: "claude_code"' in setup_text
+    assert 'picker: "cursor"' in setup_text
+    assert 'picker: "gemini_cli"' in setup_text
+    assert 'picker: "github_copilot"' in setup_text
     assert "Selected (mock)" in setup_text
     assert "Selected, path hidden" in setup_text
     assert "Hidden root selected" in setup_text
-    assert 'rootReadiness: "label_only"' in setup_text
+    assert 'rootReadiness: "label_only"' not in setup_text
     assert "selected_explicit_root" in setup_text
     assert "Not selected" in setup_text
     assert "No root selected" in setup_text
     assert "Explicit root required" in setup_text
     assert 'rootReadiness: "missing_explicit_root"' in setup_text
-    assert 'pickerAction: "Change"' in setup_text
+    assert 'pickerAction: hasExplicitRoot ? "Change" : "Choose"' in setup_text
     assert 'pickerAction: "Choose"' in setup_text
     assert 'pathPolicy: "no_path_stored"' in setup_text
-    assert 'pathPolicy: "no_local_parser"' in setup_text
-    assert 'pathPolicy: "official_report_only"' in setup_text
+    assert 'pathPolicy: "no_local_parser"' not in setup_text
+    assert 'pathPolicy: "official_report_import"' in setup_text
     assert "Path hidden" in setup_text
-    assert "No local parser" in setup_text
-    assert "Official report" in setup_text
-    assert "Needs explicit root" in setup_text
+    assert "No local parser" not in setup_text
+    assert "Official report import" in setup_text
     assert "Choose explicit root" in setup_text
-    assert "Manual status only" in setup_text
-    assert "Manual status" in setup_text
-    assert "Configure telemetry or export" in setup_text
-    assert "Telemetry/export setup" in setup_text
-    assert "Use official report" in setup_text
-    assert "Ready for gated refresh" in setup_text
+    assert "Choose usage export" in setup_text
+    assert "Choose telemetry export" in setup_text
+    assert "Choose official report" in setup_text
+    assert "Ready for refresh" in setup_text
     assert "label={pathPolicyLabels[row.pathPolicy]}" in app_text
     assert "onRootChange(row.sourceKind, event.currentTarget.value)" in app_text
     assert "onClearRoot(row.sourceKind)" in app_text
-    assert "Status only" in setup_text
-    assert "Official report" in setup_text
+    assert "Status only" not in setup_text
+    assert "Official report root" in setup_text
     assert "headerRefreshButtonLabel" in app_text
     assert "headerRefreshButtonTitle" in app_text
     assert "canRunHeaderRefresh" in app_text
@@ -605,12 +608,12 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "refresh action disabled" in readme_text
     assert "production command client" in readme_text
     assert "names `refresh_sources_manual`" in readme_text
-    assert "`No local parser`" in readme_text
-    assert "`Official report`" in readme_text
+    assert "`Path hidden`" in readme_text
+    assert "`Official report import`" in readme_text
     assert "typed `nextStep` hints" in readme_text
-    assert "telemetry/export setup" in readme_text
-    assert "official reports without" in readme_text
-    assert "`Selected (mock)` label as still missing an explicit root" in readme_text
+    assert "telemetry/export import" in readme_text
+    assert "official report import" in readme_text
+    assert "any selected explicit import root plus Tauri wiring" in readme_text
     assert "tested path-free needs label" in readme_text
     assert "root readiness" in readme_text
     assert "tested bridge state" in readme_text
@@ -625,23 +628,22 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "browser autocomplete and spellcheck disabled" in readme_text
     assert "metadata integers, not token totals" in readme_text
     assert "visible setup rows continue to show path-free labels" in readme_text
-    assert "pure future picker boundary" in readme_text
+    assert "pure picker/manual-entry boundary" in readme_text
     assert "setup rows still render path-free labels" in readme_text
-    assert "future picker handoff" in PR5_DOC.read_text(encoding="utf-8")
+    assert "picker handoff" in PR5_DOC.read_text(encoding="utf-8")
     assert "setup rows still serialize only" in PR5_DOC.read_text(encoding="utf-8")
     assert "refresh action disabled" in readme_text
     assert "or read local" in readme_text
     assert "typed `manualRefreshMockState`" in readme_text
     assert "typed `explicitRootMockRows`" in readme_text
     assert "`canRun: false`" in readme_text
-    assert "disabled explicit-root setup rows" in readme_text
-    assert "Selected (mock)" in readme_text
+    assert "explicit-root setup rows" in readme_text
     assert "visible `displayValue` is a safe label" in readme_text
     assert "`Selected, path hidden` or `No root selected`" in readme_text
     assert "neither state displays" in readme_text
     assert "Save roots" in readme_text
     assert "Forget" in readme_text
-    assert "Auto refresh stays disabled until both roots are ready and saved" in readme_text
+    assert "Auto refresh stays disabled until at least one root is ready and saved" in readme_text
     assert "masked manual inputs" in PR5_DOC.read_text(encoding="utf-8")
     assert "browser autocomplete and spellcheck stay disabled" in PR5_DOC.read_text(encoding="utf-8")
     assert "no OS picker opens" in PR5_DOC.read_text(encoding="utf-8")
@@ -721,11 +723,11 @@ def test_tauri_registers_static_sample_and_gated_manual_refresh_command():
     assert "saved_source_roots_file_round_trips_without_path_echo_errors" in rust_text
     assert "saved_source_roots_invalid_file_returns_redacted_error" in rust_text
     assert "refresh_sources_manual_backend_process_returns_redacted_error" in rust_text
-    assert "gated_refresh_sources_manual_backend_process_requires_codex_root" in rust_text
+    assert "gated_refresh_sources_manual_backend_process_requires_one_root" in rust_text
     assert "gated_refresh_sources_manual_backend_process_rejects_before_database_setup" in rust_text
-    assert "gated_refresh_sources_manual_backend_process_requires_claude_code_root" in rust_text
+    assert "gated_refresh_sources_manual_backend_process_accepts_single_codex_root" in rust_text
     assert "gated_refresh_sources_manual_backend_process_returns_fixture_success" in rust_text
-    assert "refresh_sources_manual_command_requires_codex_root" in rust_text
+    assert "refresh_sources_manual_command_requires_one_root" in rust_text
     assert "refresh_sources_manual_command_returns_fixture_success" in rust_text
     assert "fn refresh_sources_manual(" in rust_text
     assert "app: tauri::AppHandle" in rust_text
@@ -739,8 +741,7 @@ def test_tauri_registers_static_sample_and_gated_manual_refresh_command():
     assert ".app_data_dir()" in rust_text
     assert "refresh_database_path_from_env_or_app_data_dir" in rust_text
     assert "refresh_database_path_from_app_data_dir" in rust_text
-    assert "codex_jsonl_root is required for manual refresh" in rust_text
-    assert "claude_code_jsonl_root is required for manual refresh" in rust_text
+    assert "at least one source root is required for manual refresh" in rust_text
     assert "auto_discover" in rust_text
     assert "Command::new" in rust_text
     assert ".args(backend_refresh_process_module_args())" in rust_text

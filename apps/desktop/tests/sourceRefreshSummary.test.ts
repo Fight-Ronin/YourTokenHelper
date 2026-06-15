@@ -103,11 +103,11 @@ assert(
 );
 
 assertDeepEqual(sourceRefreshSummarySampleCommandContract.result.storage_summary.summary.totals, {
-  input_tokens: 6200,
-  output_tokens: 1330,
-  cached_input_tokens: 1600,
-  reasoning_output_tokens: 40,
-  total_tokens: 7570
+  input_tokens: 13900,
+  output_tokens: 3010,
+  cached_input_tokens: 2220,
+  reasoning_output_tokens: 130,
+  total_tokens: 17040
 });
 assert(
   sourceRefreshSummarySampleCommandContract.result.refresh_results.length === 5,
@@ -123,9 +123,9 @@ assertDeepEqual(
   [
     ["codex", "ready", 2, 1],
     ["claude_code", "ready", 2, 2],
-    ["cursor", "manual_only", 0, 3],
-    ["gemini_cli", "setup_required", 0, 4],
-    ["github_copilot", "official_report", 0, 5]
+    ["cursor", "ready", 1, 3],
+    ["gemini_cli", "ready", 1, 4],
+    ["github_copilot", "ready", 1, 5]
   ]
 );
 assert(
@@ -140,11 +140,11 @@ assert(
 const loadedStartupSummary = await loadStartupStorageSummaryWith(async () => loadStorageSummaryCommandContract.result);
 assert(loadedStartupSummary.ok, "startup storage readback should accept storage summary payloads");
 assertDeepEqual(loadedStartupSummary.payload.summary.totals, {
-  input_tokens: 6200,
-  output_tokens: 1330,
-  cached_input_tokens: 1600,
-  reasoning_output_tokens: 40,
-  total_tokens: 7570
+  input_tokens: 13900,
+  output_tokens: 3010,
+  cached_input_tokens: 2220,
+  reasoning_output_tokens: 130,
+  total_tokens: 17040
 });
 
 const unavailableStartupSummary = await loadStartupStorageSummaryWith(async () => ({

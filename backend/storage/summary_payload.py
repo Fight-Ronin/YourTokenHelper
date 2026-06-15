@@ -9,6 +9,7 @@ from backend.core import SOURCE_KINDS, allowance_window_to_dict, usage_summary_t
 from backend.storage.sqlite_store import (
     list_sources,
     query_allowance_windows,
+    query_refresh_state,
     query_rolling_7d_summary,
 )
 
@@ -28,6 +29,7 @@ def build_storage_summary_payload(
             "stores_response_content": False,
             "stores_tool_output": False,
         },
+        "refresh_state": query_refresh_state(connection),
         "summary": usage_summary_to_dict(
             query_rolling_7d_summary(connection, end_day_utc)
         ),

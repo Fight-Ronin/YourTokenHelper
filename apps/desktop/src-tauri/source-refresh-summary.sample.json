@@ -19,30 +19,30 @@
       "sync_run_id": 2
     },
     {
-      "confidence": "manual",
-      "events_seen": 0,
-      "message": "Cursor remains manual until a stable aggregate source is verified.",
-      "source_id": "cursor:manual",
+      "confidence": "local_estimated",
+      "events_seen": 1,
+      "message": "Aggregate JSONL usage files are available.",
+      "source_id": "cursor:usage_import",
       "source_kind": "cursor",
-      "status": "manual_only",
+      "status": "ready",
       "sync_run_id": 3
     },
     {
-      "confidence": "unavailable",
-      "events_seen": 0,
-      "message": "Gemini CLI needs explicit telemetry or export setup before sync.",
-      "source_id": "gemini_cli:setup",
+      "confidence": "local_exact",
+      "events_seen": 1,
+      "message": "Aggregate JSONL usage files are available.",
+      "source_id": "gemini_cli:telemetry_import",
       "source_kind": "gemini_cli",
-      "status": "setup_required",
+      "status": "ready",
       "sync_run_id": 4
     },
     {
       "confidence": "official",
-      "events_seen": 0,
-      "message": "Use official report import; personal local token parsing is not ready.",
+      "events_seen": 1,
+      "message": "Aggregate JSONL usage files are available.",
       "source_id": "github_copilot:official_report",
       "source_kind": "github_copilot",
-      "status": "official_report",
+      "status": "ready",
       "sync_run_id": 5
     }
   ],
@@ -54,6 +54,14 @@
       "stores_response_content": false,
       "stores_tool_output": false,
       "synthetic": false
+    },
+    "refresh_state": {
+      "attempted_source_count": 5,
+      "events_seen": 7,
+      "last_attempt_at": "2026-06-14T00:00:00Z",
+      "last_status": "succeeded",
+      "last_success_at": "2026-06-14T00:00:00Z",
+      "successful_source_count": 5
     },
     "schema_version": 1,
     "source_states": [
@@ -68,29 +76,29 @@
         "status": "ready"
       },
       {
-        "confidence": "manual",
+        "confidence": "local_estimated",
         "source_kind": "cursor",
-        "status": "manual_only"
+        "status": "ready"
       },
       {
-        "confidence": "unavailable",
+        "confidence": "local_exact",
         "source_kind": "gemini_cli",
-        "status": "setup_required"
+        "status": "ready"
       },
       {
         "confidence": "official",
         "source_kind": "github_copilot",
-        "status": "official_report"
+        "status": "ready"
       }
     ],
     "summary": {
       "by_day": {
         "2026-06-14": {
-          "cached_input_tokens": 1600,
-          "input_tokens": 6200,
-          "output_tokens": 1330,
-          "reasoning_output_tokens": 40,
-          "total_tokens": 7570
+          "cached_input_tokens": 2220,
+          "input_tokens": 13900,
+          "output_tokens": 3010,
+          "reasoning_output_tokens": 130,
+          "total_tokens": 17040
         }
       },
       "by_day_source": {
@@ -108,6 +116,27 @@
             "output_tokens": 400,
             "reasoning_output_tokens": 40,
             "total_tokens": 2540
+          },
+          "cursor": {
+            "cached_input_tokens": 0,
+            "input_tokens": 3100,
+            "output_tokens": 680,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 3780
+          },
+          "gemini_cli": {
+            "cached_input_tokens": 120,
+            "input_tokens": 1800,
+            "output_tokens": 360,
+            "reasoning_output_tokens": 90,
+            "total_tokens": 2250
+          },
+          "github_copilot": {
+            "cached_input_tokens": 500,
+            "input_tokens": 2800,
+            "output_tokens": 640,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 3440
           }
         }
       },
@@ -125,26 +154,47 @@
           "output_tokens": 400,
           "reasoning_output_tokens": 40,
           "total_tokens": 2540
+        },
+        "cursor": {
+          "cached_input_tokens": 0,
+          "input_tokens": 3100,
+          "output_tokens": 680,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 3780
+        },
+        "gemini_cli": {
+          "cached_input_tokens": 120,
+          "input_tokens": 1800,
+          "output_tokens": 360,
+          "reasoning_output_tokens": 90,
+          "total_tokens": 2250
+        },
+        "github_copilot": {
+          "cached_input_tokens": 500,
+          "input_tokens": 2800,
+          "output_tokens": 640,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 3440
         }
       },
-      "event_count": 4,
+      "event_count": 7,
       "rolling_7d": {
         "totals": {
-          "cached_input_tokens": 1600,
-          "input_tokens": 6200,
-          "output_tokens": 1330,
-          "reasoning_output_tokens": 40,
-          "total_tokens": 7570
+          "cached_input_tokens": 2220,
+          "input_tokens": 13900,
+          "output_tokens": 3010,
+          "reasoning_output_tokens": 130,
+          "total_tokens": 17040
         },
         "window_end": "2026-06-14",
         "window_start": "2026-06-08"
       },
       "totals": {
-        "cached_input_tokens": 1600,
-        "input_tokens": 6200,
-        "output_tokens": 1330,
-        "reasoning_output_tokens": 40,
-        "total_tokens": 7570
+        "cached_input_tokens": 2220,
+        "input_tokens": 13900,
+        "output_tokens": 3010,
+        "reasoning_output_tokens": 130,
+        "total_tokens": 17040
       }
     }
   }

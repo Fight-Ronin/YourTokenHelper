@@ -1,6 +1,7 @@
 """Local aggregate storage helpers."""
 
 from backend.storage.sqlite_store import (
+    CostBucketRecord,
     clear_aggregate_cache,
     connect_database,
     initialize_schema,
@@ -9,11 +10,14 @@ from backend.storage.sqlite_store import (
     query_cost_total_usd,
     query_daily_summary,
     query_daily_trend,
+    query_refresh_state,
     query_rolling_7d_summary,
     query_usage_breakdown,
+    record_cost_records,
     record_sync_run,
     record_usage_events,
     replace_allowance_windows,
+    replace_cost_records_for_source_window,
     replace_usage_events_for_source_window,
     upsert_source,
 )
@@ -21,6 +25,7 @@ from backend.storage.summary_payload import build_storage_summary_payload
 
 __all__ = [
     "build_storage_summary_payload",
+    "CostBucketRecord",
     "clear_aggregate_cache",
     "connect_database",
     "initialize_schema",
@@ -29,11 +34,14 @@ __all__ = [
     "query_cost_total_usd",
     "query_daily_summary",
     "query_daily_trend",
+    "query_refresh_state",
     "query_rolling_7d_summary",
     "query_usage_breakdown",
+    "record_cost_records",
     "record_sync_run",
     "record_usage_events",
     "replace_allowance_windows",
+    "replace_cost_records_for_source_window",
     "replace_usage_events_for_source_window",
     "upsert_source",
 ]

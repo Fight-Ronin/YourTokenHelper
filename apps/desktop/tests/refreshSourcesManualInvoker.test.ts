@@ -22,7 +22,8 @@ const fakeInvoke: TauriInvoke = async <T>(command: string, args?: Record<string,
 const invoked = await invokeRefreshSourcesManualWith(fakeInvoke, {
   endDayUtc: "2026-06-14",
   codexJsonlRoot: " synthetic/codex ",
-  claudeCodeJsonlRoot: " synthetic/claude-code "
+  claudeCodeJsonlRoot: " synthetic/claude-code ",
+  cursorJsonlRoot: " synthetic/cursor "
 });
 
 assert(invoked.ok, "expected explicit roots to invoke refresh command");
@@ -37,18 +38,19 @@ assertDeepEqual(calls[0].args, {
   args: {
     end_day_utc: "2026-06-14",
     codex_jsonl_root: "synthetic/codex",
-    claude_code_jsonl_root: "synthetic/claude-code"
+    claude_code_jsonl_root: "synthetic/claude-code",
+    cursor_jsonl_root: "synthetic/cursor"
   }
 });
 
 const refreshedDashboard = buildDashboardSummaryFromRefresh(invoked.result.storage_summary);
 assert(
-  refreshedDashboard.summary.totals.total_tokens === 7570,
+  refreshedDashboard.summary.totals.total_tokens === 17040,
   "gated refresh success should normalize into the dashboard aggregate total"
 );
 assert(
   manualRefreshSuccessMessage(refreshedDashboard.summary.totals.total_tokens) ===
-    "Updated 7,570 aggregate tokens",
+    "Updated 17,040 aggregate tokens",
   "gated refresh success should produce the path-free success message"
 );
 assert(
@@ -89,21 +91,20 @@ assert(
 );
 
 const missingRoot = await invokeRefreshSourcesManualWith(fakeInvoke, {
-  endDayUtc: "2026-06-14",
-  claudeCodeJsonlRoot: "synthetic/claude-code"
+  endDayUtc: "2026-06-14"
 });
 
-assert(!missingRoot.ok, "missing explicit Codex root should not invoke Tauri");
+assert(!missingRoot.ok, "missing every explicit root should not invoke Tauri");
 assert(calls.length === 1, "invalid gated args must not call Tauri invoke");
 assertDeepEqual(missingRoot.error, {
   error: {
     code: "invalid_refresh_request",
     field: "codex_jsonl_root",
-    message: "codex_jsonl_root is required for manual refresh"
+    message: "at least one source root is required for manual refresh"
   }
 });
 assert(
-  !JSON.stringify(missingRoot).includes("synthetic/claude-code"),
+  !JSON.stringify(missingRoot).includes("synthetic"),
   "invalid gated args must not echo supplied root values"
 );
 

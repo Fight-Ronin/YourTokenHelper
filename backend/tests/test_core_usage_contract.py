@@ -48,6 +48,37 @@ def test_usage_event_rejects_unknown_source_and_negative_tokens():
         )
 
 
+def test_usage_event_request_count_defaults_to_one_and_aggregates():
+    default_event = UsageEvent(
+        source_kind="codex",
+        source_id="codex:fixture",
+        started_at="2026-06-14T00:00:00Z",
+        total_tokens=1,
+        confidence="local_exact",
+    )
+    grouped_event = UsageEvent(
+        source_kind="openai_api_cost",
+        source_id="openai_api_cost:admin_api",
+        started_at="2026-06-14T01:00:00Z",
+        total_tokens=100,
+        confidence="official",
+        request_count=42,
+    )
+
+    assert default_event.request_count == 1
+    assert aggregate_usage([default_event, grouped_event]).event_count == 43
+
+    with pytest.raises(ContractError):
+        UsageEvent(
+            source_kind="codex",
+            source_id="codex:fixture",
+            started_at="2026-06-14T00:00:00Z",
+            total_tokens=1,
+            confidence="local_exact",
+            request_count=-1,
+        )
+
+
 def test_aggregate_usage_builds_daily_source_and_rolling_weekly_totals():
     events = [
         UsageEvent(

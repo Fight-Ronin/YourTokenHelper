@@ -10,7 +10,6 @@ import {
   Gauge,
   RefreshCw,
   Settings,
-  ShieldCheck,
   TableProperties,
   X
 } from "lucide-react";
@@ -40,10 +39,12 @@ import {
   dashboardQualityLabel,
   emptyTokenTotals,
   latestSummaryDay,
+  refreshRecencyLabel,
   sourceUsageRows,
   sourceTotalsForDay,
   startupStorageStatusLabel,
   type DashboardDataMode,
+  type SourceUsageProgress,
   type StartupStorageReadState
 } from "./data/dashboard-summary.js";
 import {
@@ -69,6 +70,7 @@ import type {
   AllowanceWindow,
   MockSummaryPayload,
   RefreshResult,
+  RefreshState,
   RefreshStorageSummaryPayload,
   SourceKind,
   SourceRefreshSummaryPayload,
@@ -356,7 +358,10 @@ export function App() {
     ? [
         manualRefreshBoundary.draft.endDayUtc,
         manualRefreshBoundary.draft.codexJsonlRoot,
-        manualRefreshBoundary.draft.claudeCodeJsonlRoot
+        manualRefreshBoundary.draft.claudeCodeJsonlRoot,
+        manualRefreshBoundary.draft.cursorJsonlRoot,
+        manualRefreshBoundary.draft.geminiCliJsonlRoot,
+        manualRefreshBoundary.draft.githubCopilotJsonlRoot
       ].join("|")
     : "";
 
@@ -524,7 +529,6 @@ function DailyView({
   const daily = payload.summary.by_day[day] ?? emptyTokenTotals();
   const dailySourceTotals = sourceTotalsForDay(payload, day);
   const remaining = firstKnownAllowance(payload, ["codex", "claude_code"]);
-  const missingAllowances = payload.allowance_windows.filter((item) => item.status === "unavailable");
 
   return (
     <>
@@ -534,9 +538,9 @@ function DailyView({
         <div className="left-stack">
           <Panel title="Source Usage">
             <SourceStack
+              allowanceWindows={payload.allowance_windows}
               configuredSourceKinds={configuredSourceKinds}
               totals={dailySourceTotals}
-              overallTotal={daily.total_tokens}
             />
           </Panel>
 
@@ -550,28 +554,6 @@ function DailyView({
         </div>
 
         <aside className="right-stack">
-          <Panel title="Trust">
-            <div className="trust-row">
-              <ShieldCheck size={16} />
-              <div>
-                <strong>{dataMode === "mock" ? "Contract-backed mock" : "Live local aggregate"}</strong>
-                <span>
-                  {dataMode === "mock"
-                    ? "Local exact where ready; estimates are labeled."
-                    : "Manual refresh aggregate; unavailable allowance stays labeled."}
-                </span>
-              </div>
-            </div>
-            <div className="issue-list">
-              {missingAllowances.map((item) => (
-                <div className="issue" key={item.source_kind}>
-                  <span>{sourceLabels[item.source_kind]}</span>
-                  <StatusBadge label="Allowance unavailable" />
-                </div>
-              ))}
-            </div>
-          </Panel>
-
           <Panel title="Sources">
             <SourceStatusList payload={payload} />
           </Panel>
@@ -592,6 +574,7 @@ function WeeklyView({
 }) {
   const rolling = payload.summary.rolling_7d;
   const remaining = firstKnownAllowance(payload, ["codex", "claude_code"]);
+  const refreshRecency = refreshRecencyLabel(payload.refresh_state);
 
   return (
     <>
@@ -605,9 +588,9 @@ function WeeklyView({
 
           <Panel title="Weekly Source Split">
             <SourceStack
+              allowanceWindows={payload.allowance_windows}
               configuredSourceKinds={configuredSourceKinds}
               totals={payload.summary.by_source}
-              overallTotal={rolling.totals.total_tokens}
             />
           </Panel>
         </div>
@@ -618,6 +601,7 @@ function WeeklyView({
               <Fact label="Start" value={rolling.window_start ?? "Unavailable"} />
               <Fact label="End" value={rolling.window_end ?? "Unavailable"} />
               <Fact label="Days" value={String(Object.keys(payload.summary.by_day).length)} />
+              <Fact label="Refresh" value={refreshRecency.label} />
             </div>
           </Panel>
 
@@ -724,7 +708,11 @@ function SourcesView({
       </Panel>
 
       <Panel title="Saved Aggregate">
-        <StartupStorageStatus dataMode={dataMode} state={startupStorageReadState} />
+        <StartupStorageStatus
+          dataMode={dataMode}
+          refreshState={payload.refresh_state}
+          state={startupStorageReadState}
+        />
       </Panel>
 
       <Panel title="Last Refresh">
@@ -741,11 +729,15 @@ function SourcesView({
 
 function StartupStorageStatus({
   dataMode,
+  refreshState,
   state
 }: {
   dataMode: DashboardDataMode;
+  refreshState: RefreshState;
   state: StartupStorageReadState;
 }) {
+  const refreshRecency = refreshRecencyLabel(refreshState);
+
   return (
     <div className="manual-refresh-mock" aria-label="Saved aggregate readback state">
       <div className="manual-refresh-row">
@@ -757,8 +749,16 @@ function StartupStorageStatus({
         <strong>{dataMode === "local_refresh" ? "Saved aggregate" : "Mock fallback"}</strong>
       </div>
       <div className="manual-refresh-row">
-        <span>Refresh</span>
+        <span>Mode</span>
         <strong>Manual or auto</strong>
+      </div>
+      <div className="manual-refresh-row">
+        <span>Refresh</span>
+        <StatusBadge label={refreshRecency.label} />
+      </div>
+      <div className="manual-refresh-row">
+        <span>Freshness</span>
+        <strong>{refreshRecency.detail}</strong>
       </div>
       {state.phase === "unavailable" ? (
         <div className="manual-refresh-row">
@@ -844,7 +844,7 @@ function ManualRefreshMock({
         Auto
       </label>
       <button
-        aria-label={canInvoke ? "Run gated manual refresh" : manualRefreshMockState.disabledAriaLabel}
+        aria-label={canInvoke ? "Run manual refresh" : manualRefreshMockState.disabledAriaLabel}
         className="sync-button"
         disabled={!canInvoke || isRunning}
         onClick={onRefresh}
@@ -995,11 +995,23 @@ function ExplicitRootsMock({
 }
 
 function isExplicitRootRow(row: ExplicitRootMockRow): row is ExplicitRootMockRow & { sourceKind: ExplicitRootSourceKind } {
-  return row.sourceKind === "codex" || row.sourceKind === "claude_code";
+  return Boolean(row.picker);
 }
 
 function rootDraftValue(sourceKind: ExplicitRootSourceKind, draft: ExplicitRootSelectionDraft) {
-  return sourceKind === "codex" ? draft.codexJsonlRoot ?? "" : draft.claudeCodeJsonlRoot ?? "";
+  if (sourceKind === "codex") {
+    return draft.codexJsonlRoot ?? "";
+  }
+  if (sourceKind === "claude_code") {
+    return draft.claudeCodeJsonlRoot ?? "";
+  }
+  if (sourceKind === "cursor") {
+    return draft.cursorJsonlRoot ?? "";
+  }
+  if (sourceKind === "gemini_cli") {
+    return draft.geminiCliJsonlRoot ?? "";
+  }
+  return draft.githubCopilotJsonlRoot ?? "";
 }
 
 function ApiCostsView({ dataMode, payload }: { dataMode: DashboardDataMode; payload: MockSummaryPayload }) {
@@ -1148,34 +1160,52 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function SourceStack({
+  allowanceWindows,
   configuredSourceKinds,
-  totals,
-  overallTotal
+  totals
 }: {
+  allowanceWindows: readonly AllowanceWindow[];
   configuredSourceKinds: readonly SourceKind[];
   totals: Record<SourceKind, TokenTotals>;
-  overallTotal: number;
 }) {
-  const rows = sourceUsageRows(totals, configuredSourceKinds);
+  const rows = sourceUsageRows(totals, configuredSourceKinds, allowanceWindows);
 
   return (
     <div className="source-stack">
-      {rows.map(({ sourceKind, totals: total }) => {
-        const percent = barPercent(total.total_tokens, overallTotal, 4);
+      {rows.map(({ sourceKind, totals: total, progress }) => {
+        const barWidth = progress.percent > 0 ? Math.min(100, Math.max(4, progress.percent)) : 0;
         return (
           <div className="stack-row" key={sourceKind}>
             <div className="stack-label">
               <span>{sourceLabels[sourceKind]}</span>
               <span>{formatTokens(total.total_tokens)}</span>
             </div>
+            <div className="stack-meta">
+              <span>{sourceUsageProgressLabel(progress)}</span>
+              <span>{sourceUsageProgressDetail(progress)}</span>
+            </div>
             <div className="bar-track">
-              <span className="bar-fill" style={{ width: `${percent}%`, background: sourceColors[sourceKind] }} />
+              <span className="bar-fill" style={{ width: `${barWidth}%`, background: sourceColors[sourceKind] }} />
             </div>
           </div>
         );
       })}
     </div>
   );
+}
+
+function sourceUsageProgressLabel(progress: SourceUsageProgress) {
+  if (progress.kind === "usage_share") {
+    return `${formatPercent(progress.percent)} of usage`;
+  }
+  return `${formatPercent(progress.percent)} limit used`;
+}
+
+function sourceUsageProgressDetail(progress: SourceUsageProgress) {
+  if (progress.kind === "usage_share") {
+    return "usage split";
+  }
+  return `${formatCompactNumber(progress.usedAmount)} / ${formatCompactNumber(progress.limitAmount)} ${allowanceUnitLabel(progress.unit)} ${progress.status.replace("_", " ")}`;
 }
 
 function TokenSplit({ totals }: { totals: TokenTotals }) {
@@ -1335,6 +1365,15 @@ function configuredUsageSourceKinds(preferences: SourceRootPreferences): SourceK
   if (preferences.rootDraft.claudeCodeJsonlRoot?.trim()) {
     configured.push("claude_code");
   }
+  if (preferences.rootDraft.cursorJsonlRoot?.trim()) {
+    configured.push("cursor");
+  }
+  if (preferences.rootDraft.geminiCliJsonlRoot?.trim()) {
+    configured.push("gemini_cli");
+  }
+  if (preferences.rootDraft.githubCopilotJsonlRoot?.trim()) {
+    configured.push("github_copilot");
+  }
   return configured;
 }
 
@@ -1344,6 +1383,30 @@ function formatTokens(value: number) {
 
 function formatInteger(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: value < 10 ? 2 : 0
+  }).format(value);
+}
+
+function formatPercent(value: number) {
+  if (value > 0 && value < 1) {
+    return "<1%";
+  }
+  return `${Math.round(value)}%`;
+}
+
+function allowanceUnitLabel(unit: AllowanceWindow["unit"]) {
+  const labels: Record<AllowanceWindow["unit"], string> = {
+    tokens: "tokens",
+    credits: "credits",
+    usd: "USD",
+    requests: "requests",
+    unknown: "allowance"
+  };
+  return labels[unit];
 }
 
 function formatAllowance(window: AllowanceWindow) {

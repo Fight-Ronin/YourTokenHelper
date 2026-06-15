@@ -27,6 +27,14 @@ def test_mock_summary_fixture_has_pr3_ready_contract_shape():
     assert payload["summary"]["totals"]["total_tokens"] == 60140
     assert payload["summary"]["rolling_7d"]["window_start"] == "2026-06-08"
     assert payload["summary"]["rolling_7d"]["window_end"] == "2026-06-14"
+    assert payload["refresh_state"] == {
+        "last_attempt_at": "2026-06-14T00:00:00Z",
+        "last_success_at": "2026-06-14T00:00:00Z",
+        "last_status": "mock",
+        "successful_source_count": 0,
+        "attempted_source_count": 0,
+        "events_seen": 0,
+    }
     assert {source["source_kind"] for source in payload["source_states"]} == {
         "codex",
         "claude_code",

@@ -23,6 +23,14 @@ def build_mock_summary_payload() -> dict[str, Any]:
             "stores_response_content": False,
             "stores_tool_output": False,
         },
+        "refresh_state": {
+            "last_attempt_at": "2026-06-14T00:00:00Z",
+            "last_success_at": "2026-06-14T00:00:00Z",
+            "last_status": "mock",
+            "successful_source_count": 0,
+            "attempted_source_count": 0,
+            "events_seen": 0,
+        },
         "summary": usage_summary_to_dict(aggregate_usage(mock_usage_events())),
         "allowance_windows": [
             allowance_window_to_dict(window)

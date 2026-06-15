@@ -288,10 +288,9 @@ Main grid
          Token split
          Top drivers table
 
-  Right: Trust panel
-         Source health
-         Allowance status
-         Cost coverage
+  Right: Source health
+         Saved aggregate freshness
+         Allowance or cost status when actionable
 ```
 
 ### Daily Metric Strip
@@ -325,11 +324,11 @@ Avoid:
 - Dense multi-axis charts.
 - Prompt/session drilldown as a V1 default.
 
-### Daily Trust Panel
+### Daily Source Health
 
-The trust panel should be visible without scrolling on common desktop sizes.
+Daily should not reserve a separate Trust panel. Trust and coverage signals should appear only where they help a decision: Source Usage labels, Sources health, Saved Aggregate freshness, and API Costs coverage.
 
-It should show:
+These surfaces should show:
 
 - Last successful sync.
 - Sources with failed or partial sync.
@@ -337,7 +336,7 @@ It should show:
 - Cost coverage: complete, partial, unavailable.
 - Stale data indicator.
 
-It should be quiet when healthy and specific when something is wrong.
+They should be quiet when healthy and specific when something is wrong.
 
 ## Weekly View
 
@@ -717,7 +716,7 @@ Render:
 
 - Usage normally.
 - Cost estimate with `Partial` badge.
-- Missing cost note in trust panel.
+- Missing cost note in API Costs or source health.
 
 Do not silently show `$0.00`.
 
@@ -726,7 +725,7 @@ Do not silently show `$0.00`.
 Render:
 
 - Last successful sync timestamp.
-- Stale badge near page header or trust panel.
+- Stale badge near Saved Aggregate, Sources, or page header.
 - Manual sync action.
 
 ## Interaction Rules
@@ -816,4 +815,3 @@ The desktop shell design is acceptable when:
 - Should API Costs be a primary sidebar item or nested under Sources until connected?
 - Should the app include a compact tray/menu-bar view after V1?
 - Should weekly default to rolling 7 days only, or should calendar week become a later toggle?
-

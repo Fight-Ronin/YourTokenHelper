@@ -81,6 +81,14 @@
     "stores_tool_output": false,
     "synthetic": true
   },
+  "refresh_state": {
+    "attempted_source_count": 0,
+    "events_seen": 0,
+    "last_attempt_at": "2026-06-14T00:00:00Z",
+    "last_status": "mock",
+    "last_success_at": "2026-06-14T00:00:00Z",
+    "successful_source_count": 0
+  },
   "schema_version": 1,
   "source_states": [
     {

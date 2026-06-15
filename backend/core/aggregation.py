@@ -56,7 +56,7 @@ def aggregate_usage(events: Iterable[UsageEvent]) -> UsageSummary:
                 rolling_totals = add_totals(rolling_totals, event.token_totals())
 
     return UsageSummary(
-        event_count=len(sorted_events),
+        event_count=sum(event.request_count for event in sorted_events),
         totals=sum_totals(event.token_totals() for event in sorted_events),
         by_source=by_source,
         by_day=by_day,

@@ -73,6 +73,15 @@ export type SourceState = {
   confidence: SourceConfidence;
 };
 
+export type RefreshState = {
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_status: "never_refreshed" | "mock" | "blocked" | "failed" | "partial" | "succeeded";
+  successful_source_count: number;
+  attempted_source_count: number;
+  events_seen: number;
+};
+
 export type MockSummaryPayload = {
   schema_version: number;
   generated_from: string;
@@ -82,6 +91,7 @@ export type MockSummaryPayload = {
     stores_response_content: boolean;
     stores_tool_output: boolean;
   };
+  refresh_state: RefreshState;
   summary: UsageSummary;
   allowance_windows: AllowanceWindow[];
   source_states: SourceState[];

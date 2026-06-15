@@ -124,6 +124,14 @@ def test_refresh_sources_summary_payload_combines_refresh_results_and_summary():
     assert list(payload) == ["refresh_results", "storage_summary"]
     assert [item["events_seen"] for item in payload["refresh_results"]] == [2, 2, 0, 0, 0]
     assert payload["storage_summary"]["generated_from"] == "backend.sources.refresh"
+    assert payload["storage_summary"]["refresh_state"] == {
+        "last_attempt_at": "2026-06-14T00:00:00Z",
+        "last_success_at": "2026-06-14T00:00:00Z",
+        "last_status": "succeeded",
+        "successful_source_count": 2,
+        "attempted_source_count": 5,
+        "events_seen": 4,
+    }
     assert payload["storage_summary"]["summary"]["event_count"] == 4
     assert payload["storage_summary"]["summary"]["totals"]["total_tokens"] == 7570
     assert payload["storage_summary"]["source_states"] == [
@@ -178,6 +186,14 @@ def test_refresh_sources_summary_payload_without_roots_keeps_summary_empty():
     assert [item["events_seen"] for item in payload["refresh_results"]] == [0, 0, 0, 0, 0]
     assert payload["storage_summary"]["summary"]["event_count"] == 0
     assert payload["storage_summary"]["summary"]["totals"]["total_tokens"] == 0
+    assert payload["storage_summary"]["refresh_state"] == {
+        "last_attempt_at": "2026-06-14T00:00:00Z",
+        "last_success_at": None,
+        "last_status": "blocked",
+        "successful_source_count": 0,
+        "attempted_source_count": 5,
+        "events_seen": 0,
+    }
     assert len(payload["storage_summary"]["source_states"]) == 5
 
 

@@ -27,6 +27,9 @@ def build_source_refresh_summary_payload(
     return build_primary_refresh_command_payload(
         codex_jsonl_root=fixture_root / "codex",
         claude_code_jsonl_root=fixture_root / "claude_code",
+        cursor_jsonl_root=fixture_root / "cursor",
+        gemini_cli_jsonl_root=fixture_root / "gemini_cli",
+        github_copilot_jsonl_root=fixture_root / "github_copilot",
         end_day_utc=end_day_utc,
         started_at=started_at,
     )

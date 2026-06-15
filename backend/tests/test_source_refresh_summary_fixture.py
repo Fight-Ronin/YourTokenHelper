@@ -25,10 +25,18 @@ def test_source_refresh_summary_fixture_builds_pr5_handoff_payload():
         "gemini_cli",
         "github_copilot",
     ]
-    assert [item["events_seen"] for item in payload["refresh_results"]] == [2, 2, 0, 0, 0]
+    assert [item["events_seen"] for item in payload["refresh_results"]] == [2, 2, 1, 1, 1]
     assert payload["storage_summary"]["generated_from"] == "backend.sources.refresh"
-    assert payload["storage_summary"]["summary"]["event_count"] == 4
-    assert payload["storage_summary"]["summary"]["totals"]["total_tokens"] == 7570
+    assert payload["storage_summary"]["refresh_state"] == {
+        "last_attempt_at": "2026-06-14T00:00:00Z",
+        "last_success_at": "2026-06-14T00:00:00Z",
+        "last_status": "succeeded",
+        "successful_source_count": 5,
+        "attempted_source_count": 5,
+        "events_seen": 7,
+    }
+    assert payload["storage_summary"]["summary"]["event_count"] == 7
+    assert payload["storage_summary"]["summary"]["totals"]["total_tokens"] == 17040
 
 
 def test_source_refresh_summary_fixture_can_export_json(tmp_path):

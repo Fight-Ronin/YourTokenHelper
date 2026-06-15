@@ -30,6 +30,12 @@ pub struct RefreshSourcesManualArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claude_code_jsonl_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_jsonl_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gemini_cli_jsonl_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub github_copilot_jsonl_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<String>,
 }
 
@@ -53,6 +59,12 @@ pub struct SavedSourceRoots {
     pub codex_jsonl_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claude_code_jsonl_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_jsonl_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gemini_cli_jsonl_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub github_copilot_jsonl_root: Option<String>,
     #[serde(default)]
     pub auto_refresh_enabled: bool,
     #[serde(default = "default_auto_refresh_interval_minutes")]
@@ -84,6 +96,9 @@ impl Default for SavedSourceRoots {
         Self {
             codex_jsonl_root: None,
             claude_code_jsonl_root: None,
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             auto_refresh_enabled: false,
             auto_refresh_interval_minutes: DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES,
         }
@@ -138,12 +153,22 @@ pub fn load_storage_summary_result_from_stdout(
 pub fn normalize_saved_source_roots(args: SavedSourceRoots) -> SavedSourceRoots {
     let codex_jsonl_root = normalize_optional_root(args.codex_jsonl_root);
     let claude_code_jsonl_root = normalize_optional_root(args.claude_code_jsonl_root);
-    let has_both_roots = codex_jsonl_root.is_some() && claude_code_jsonl_root.is_some();
+    let cursor_jsonl_root = normalize_optional_root(args.cursor_jsonl_root);
+    let gemini_cli_jsonl_root = normalize_optional_root(args.gemini_cli_jsonl_root);
+    let github_copilot_jsonl_root = normalize_optional_root(args.github_copilot_jsonl_root);
+    let has_any_root = codex_jsonl_root.is_some()
+        || claude_code_jsonl_root.is_some()
+        || cursor_jsonl_root.is_some()
+        || gemini_cli_jsonl_root.is_some()
+        || github_copilot_jsonl_root.is_some();
 
     SavedSourceRoots {
         codex_jsonl_root,
         claude_code_jsonl_root,
-        auto_refresh_enabled: args.auto_refresh_enabled && has_both_roots,
+        cursor_jsonl_root,
+        gemini_cli_jsonl_root,
+        github_copilot_jsonl_root,
+        auto_refresh_enabled: args.auto_refresh_enabled && has_any_root,
         auto_refresh_interval_minutes: normalize_auto_refresh_interval_minutes(
             args.auto_refresh_interval_minutes,
         ),
@@ -323,28 +348,10 @@ pub fn run_gated_refresh_sources_manual_backend_process_with_database_path(
     args: &RefreshSourcesManualArgs,
     refresh_database_path: Option<&Path>,
 ) -> Result<RefreshSourcesManualResult, String> {
-    if args
-        .codex_jsonl_root
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .is_empty()
-    {
+    if !has_any_refresh_source_root(args) {
         return Ok(invalid_refresh_request(
             "codex_jsonl_root",
-            "codex_jsonl_root is required for manual refresh",
-        ));
-    }
-    if args
-        .claude_code_jsonl_root
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .is_empty()
-    {
-        return Ok(invalid_refresh_request(
-            "claude_code_jsonl_root",
-            "claude_code_jsonl_root is required for manual refresh",
+            "at least one source root is required for manual refresh",
         ));
     }
 
@@ -354,6 +361,21 @@ pub fn run_gated_refresh_sources_manual_backend_process_with_database_path(
         args,
         refresh_database_path,
     )
+}
+
+fn has_any_refresh_source_root(args: &RefreshSourcesManualArgs) -> bool {
+    root_is_present(&args.codex_jsonl_root)
+        || root_is_present(&args.claude_code_jsonl_root)
+        || root_is_present(&args.cursor_jsonl_root)
+        || root_is_present(&args.gemini_cli_jsonl_root)
+        || root_is_present(&args.github_copilot_jsonl_root)
+}
+
+fn root_is_present(value: &Option<String>) -> bool {
+    match value.as_deref() {
+        Some(text) => !text.trim().is_empty(),
+        None => false,
+    }
 }
 
 fn invalid_refresh_request(field: &str, message: &str) -> RefreshSourcesManualResult {
@@ -605,6 +627,9 @@ mod tests {
         assert_eq!(serialized["started_at"], "2026-06-14T00:00:00Z");
         assert!(serialized.get("codex_jsonl_root").is_none());
         assert!(serialized.get("claude_code_jsonl_root").is_none());
+        assert!(serialized.get("cursor_jsonl_root").is_none());
+        assert!(serialized.get("gemini_cli_jsonl_root").is_none());
+        assert!(serialized.get("github_copilot_jsonl_root").is_none());
     }
 
     #[test]
@@ -612,7 +637,10 @@ mod tests {
         let args: RefreshSourcesManualArgs = serde_json::from_value(json!({
             "end_day_utc": "2026-06-14",
             "codex_jsonl_root": "synthetic-codex-root",
-            "claude_code_jsonl_root": "synthetic-claude-root"
+            "claude_code_jsonl_root": "synthetic-claude-root",
+            "cursor_jsonl_root": "synthetic-cursor-root",
+            "gemini_cli_jsonl_root": "synthetic-gemini-root",
+            "github_copilot_jsonl_root": "synthetic-copilot-root"
         }))
         .unwrap();
         let text = serde_json::to_string(&args).unwrap();
@@ -625,8 +653,23 @@ mod tests {
             args.claude_code_jsonl_root.as_deref(),
             Some("synthetic-claude-root")
         );
+        assert_eq!(
+            args.cursor_jsonl_root.as_deref(),
+            Some("synthetic-cursor-root")
+        );
+        assert_eq!(
+            args.gemini_cli_jsonl_root.as_deref(),
+            Some("synthetic-gemini-root")
+        );
+        assert_eq!(
+            args.github_copilot_jsonl_root.as_deref(),
+            Some("synthetic-copilot-root")
+        );
         assert!(text.contains("codex_jsonl_root"));
         assert!(text.contains("claude_code_jsonl_root"));
+        assert!(text.contains("cursor_jsonl_root"));
+        assert!(text.contains("gemini_cli_jsonl_root"));
+        assert!(text.contains("github_copilot_jsonl_root"));
         assert!(!text.contains("auto_discover"));
     }
 
@@ -636,14 +679,20 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some("synthetic-codex-root".to_string()),
             claude_code_jsonl_root: None,
+            cursor_jsonl_root: Some("synthetic-cursor-root".to_string()),
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
         let text = refresh_sources_manual_stdin(&args).unwrap();
 
         assert!(text.contains("\"end_day_utc\":\"2026-06-14\""));
         assert!(text.contains("\"codex_jsonl_root\":\"synthetic-codex-root\""));
+        assert!(text.contains("\"cursor_jsonl_root\":\"synthetic-cursor-root\""));
         assert!(text.contains("\"started_at\":\"2026-06-14T00:00:00Z\""));
         assert!(!text.contains("claude_code_jsonl_root"));
+        assert!(!text.contains("gemini_cli_jsonl_root"));
+        assert!(!text.contains("github_copilot_jsonl_root"));
         assert!(!text.contains("auto_discover"));
         assert!(!text.contains("source_refresh_summary_sample"));
     }
@@ -691,7 +740,7 @@ mod tests {
                 assert!(payload.get("error").is_none());
                 assert_eq!(
                     payload["storage_summary"]["summary"]["totals"]["total_tokens"],
-                    7570
+                    17040
                 );
             }
             RefreshSourcesManualResult::Error(_) => {
@@ -709,7 +758,7 @@ mod tests {
             RefreshSourcesManualResult::Success(payload) => {
                 assert_eq!(
                     payload["storage_summary"]["summary"]["totals"]["total_tokens"],
-                    7570
+                    17040
                 );
             }
             RefreshSourcesManualResult::Error(_) => {
@@ -727,7 +776,7 @@ mod tests {
         match result {
             LoadStorageSummaryResult::Success(payload) => {
                 assert!(payload.get("error").is_none());
-                assert_eq!(payload["summary"]["totals"]["total_tokens"], 7570);
+                assert_eq!(payload["summary"]["totals"]["total_tokens"], 17040);
                 assert!(payload.get("refresh_results").is_none());
             }
             LoadStorageSummaryResult::Error(_) => {
@@ -793,6 +842,9 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -833,6 +885,9 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -852,6 +907,9 @@ mod tests {
                 end_day_utc: "2026-06-14".to_string(),
                 codex_jsonl_root: None,
                 claude_code_jsonl_root: None,
+                cursor_jsonl_root: None,
+                gemini_cli_jsonl_root: None,
+                github_copilot_jsonl_root: None,
                 started_at: Some("2026-06-14T00:10:00Z".to_string()),
             },
             Some(&database_path),
@@ -922,6 +980,9 @@ mod tests {
                 end_day_utc: "2026-06-14".to_string(),
                 codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
                 claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
+                cursor_jsonl_root: None,
+                gemini_cli_jsonl_root: None,
+                github_copilot_jsonl_root: None,
                 started_at: Some("2026-06-14T00:00:00Z".to_string()),
             },
             &database_path,
@@ -991,6 +1052,9 @@ mod tests {
         let saved = normalize_saved_source_roots(SavedSourceRoots {
             codex_jsonl_root: Some(" synthetic-codex-root ".to_string()),
             claude_code_jsonl_root: Some(" synthetic-claude-root ".to_string()),
+            cursor_jsonl_root: Some(" synthetic-cursor-root ".to_string()),
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             auto_refresh_enabled: true,
             auto_refresh_interval_minutes: 1,
         });
@@ -1003,6 +1067,10 @@ mod tests {
             saved.claude_code_jsonl_root.as_deref(),
             Some("synthetic-claude-root")
         );
+        assert_eq!(
+            saved.cursor_jsonl_root.as_deref(),
+            Some("synthetic-cursor-root")
+        );
         assert!(saved.auto_refresh_enabled);
         assert_eq!(
             saved.auto_refresh_interval_minutes,
@@ -1012,11 +1080,14 @@ mod tests {
         let missing_claude = normalize_saved_source_roots(SavedSourceRoots {
             codex_jsonl_root: Some("synthetic-codex-root".to_string()),
             claude_code_jsonl_root: None,
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             auto_refresh_enabled: true,
             auto_refresh_interval_minutes: 1441,
         });
 
-        assert!(!missing_claude.auto_refresh_enabled);
+        assert!(missing_claude.auto_refresh_enabled);
         assert_eq!(missing_claude.auto_refresh_interval_minutes, 1440);
     }
 
@@ -1028,6 +1099,9 @@ mod tests {
             &SavedSourceRoots {
                 codex_jsonl_root: Some("synthetic-codex-root".to_string()),
                 claude_code_jsonl_root: Some("synthetic-claude-root".to_string()),
+                cursor_jsonl_root: Some("synthetic-cursor-root".to_string()),
+                gemini_cli_jsonl_root: None,
+                github_copilot_jsonl_root: None,
                 auto_refresh_enabled: true,
                 auto_refresh_interval_minutes: 15,
             },
@@ -1078,6 +1152,9 @@ mod tests {
             end_day_utc: "2026-6-14".to_string(),
             codex_jsonl_root: Some("C:/Users/example/secret/codex".to_string()),
             claude_code_jsonl_root: None,
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -1105,12 +1182,15 @@ mod tests {
     }
 
     #[test]
-    fn gated_refresh_sources_manual_backend_process_requires_codex_root() {
+    fn gated_refresh_sources_manual_backend_process_requires_one_root() {
         let workspace_root = workspace_root_for_tests();
         let args = RefreshSourcesManualArgs {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: None,
-            claude_code_jsonl_root: Some("synthetic-claude-root".to_string()),
+            claude_code_jsonl_root: None,
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -1128,14 +1208,14 @@ mod tests {
                 assert_eq!(payload.error.field.as_deref(), Some("codex_jsonl_root"));
                 assert_eq!(
                     payload.error.message,
-                    "codex_jsonl_root is required for manual refresh"
+                    "at least one source root is required for manual refresh"
                 );
             }
             RefreshSourcesManualResult::Success(_) => {
-                panic!("expected missing Codex root error");
+                panic!("expected missing source root error");
             }
         }
-        assert!(!text.contains("synthetic-claude-root"));
+        assert!(!text.contains("C:/Users"));
     }
 
     #[test]
@@ -1145,7 +1225,10 @@ mod tests {
         let args = RefreshSourcesManualArgs {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: None,
-            claude_code_jsonl_root: Some("synthetic-claude-root".to_string()),
+            claude_code_jsonl_root: None,
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -1169,16 +1252,19 @@ mod tests {
         }
         assert!(!database_path.exists());
         assert!(!text.contains(&path_text(&database_path)));
-        assert!(!text.contains("synthetic-claude-root"));
+        assert!(!text.contains("synthetic"));
     }
 
     #[test]
-    fn refresh_sources_manual_command_requires_codex_root() {
+    fn refresh_sources_manual_command_requires_one_root() {
         let database_path = refresh_database_path_for_tests("command-missing-root");
         let args = RefreshSourcesManualArgs {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: None,
-            claude_code_jsonl_root: Some("synthetic-claude-root".to_string()),
+            claude_code_jsonl_root: None,
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -1191,15 +1277,15 @@ mod tests {
                 assert_eq!(payload.error.field.as_deref(), Some("codex_jsonl_root"));
                 assert_eq!(
                     payload.error.message,
-                    "codex_jsonl_root is required for manual refresh"
+                    "at least one source root is required for manual refresh"
                 );
             }
             RefreshSourcesManualResult::Success(_) => {
-                panic!("expected missing Codex root error");
+                panic!("expected missing source root error");
             }
         }
         assert!(!database_path.exists());
-        assert!(!text.contains("synthetic-claude-root"));
+        assert!(!text.contains("synthetic"));
     }
 
     #[test]
@@ -1211,6 +1297,9 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
+            cursor_jsonl_root: Some(path_text(&fixture_root.join("cursor"))),
+            gemini_cli_jsonl_root: Some(path_text(&fixture_root.join("gemini_cli"))),
+            github_copilot_jsonl_root: Some(path_text(&fixture_root.join("github_copilot"))),
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -1221,7 +1310,7 @@ mod tests {
             RefreshSourcesManualResult::Success(payload) => {
                 assert_eq!(
                     payload["storage_summary"]["summary"]["totals"]["total_tokens"],
-                    7570
+                    17040
                 );
             }
             RefreshSourcesManualResult::Error(_) => {
@@ -1234,13 +1323,17 @@ mod tests {
     }
 
     #[test]
-    fn gated_refresh_sources_manual_backend_process_requires_claude_code_root() {
+    fn gated_refresh_sources_manual_backend_process_accepts_single_codex_root() {
         let workspace_root = workspace_root_for_tests();
+        let fixture_root = workspace_root.join("experiments/fixtures/local_sources");
         let args = RefreshSourcesManualArgs {
             end_day_utc: "2026-06-14".to_string(),
-            codex_jsonl_root: Some("synthetic-codex-root".to_string()),
+            codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: None,
-            started_at: None,
+            cursor_jsonl_root: None,
+            gemini_cli_jsonl_root: None,
+            github_copilot_jsonl_root: None,
+            started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
         let result = run_gated_refresh_sources_manual_backend_process(
@@ -1252,19 +1345,14 @@ mod tests {
         let text = serde_json::to_string(&result).unwrap();
 
         match result {
-            RefreshSourcesManualResult::Error(payload) => {
-                assert_eq!(payload.error.code, "invalid_refresh_request");
+            RefreshSourcesManualResult::Success(payload) => {
                 assert_eq!(
-                    payload.error.field.as_deref(),
-                    Some("claude_code_jsonl_root")
-                );
-                assert_eq!(
-                    payload.error.message,
-                    "claude_code_jsonl_root is required for manual refresh"
+                    payload["storage_summary"]["summary"]["totals"]["total_tokens"],
+                    2540
                 );
             }
-            RefreshSourcesManualResult::Success(_) => {
-                panic!("expected missing Claude Code root error");
+            RefreshSourcesManualResult::Error(_) => {
+                panic!("expected single Codex root success");
             }
         }
         assert!(!text.contains("synthetic-codex-root"));
@@ -1278,6 +1366,9 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
+            cursor_jsonl_root: Some(path_text(&fixture_root.join("cursor"))),
+            gemini_cli_jsonl_root: Some(path_text(&fixture_root.join("gemini_cli"))),
+            github_copilot_jsonl_root: Some(path_text(&fixture_root.join("github_copilot"))),
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -1292,7 +1383,7 @@ mod tests {
             RefreshSourcesManualResult::Success(payload) => {
                 assert_eq!(
                     payload["storage_summary"]["summary"]["totals"]["total_tokens"],
-                    7570
+                    17040
                 );
             }
             RefreshSourcesManualResult::Error(_) => {
@@ -1309,7 +1400,7 @@ mod tests {
         assert_eq!(payload["refresh_results"][0]["events_seen"], 2);
         assert_eq!(
             payload["storage_summary"]["summary"]["totals"]["total_tokens"],
-            7570
+            17040
         );
     }
 

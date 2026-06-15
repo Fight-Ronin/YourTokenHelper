@@ -39,6 +39,9 @@ def test_primary_refresh_command_request_parses_explicit_roots():
         {
             "codex_jsonl_root": "experiments/fixtures/local_sources/codex",
             "claude_code_jsonl_root": "experiments/fixtures/local_sources/claude_code",
+            "cursor_jsonl_root": "experiments/fixtures/local_sources/cursor",
+            "gemini_cli_jsonl_root": "experiments/fixtures/local_sources/gemini_cli",
+            "github_copilot_jsonl_root": "experiments/fixtures/local_sources/github_copilot",
             "end_day_utc": "2026-06-14",
             "started_at": "2026-06-14T08:00:00+08:00",
         }
@@ -47,6 +50,9 @@ def test_primary_refresh_command_request_parses_explicit_roots():
     assert PRIMARY_REFRESH_COMMAND_NAME == "refresh_sources_manual"
     assert request.codex_jsonl_root == FIXTURE_ROOT / "codex"
     assert request.claude_code_jsonl_root == FIXTURE_ROOT / "claude_code"
+    assert request.cursor_jsonl_root == FIXTURE_ROOT / "cursor"
+    assert request.gemini_cli_jsonl_root == FIXTURE_ROOT / "gemini_cli"
+    assert request.github_copilot_jsonl_root == FIXTURE_ROOT / "github_copilot"
     assert request.end_day_utc == "2026-06-14"
     assert request.started_at == "2026-06-14T00:00:00Z"
 
@@ -333,6 +339,26 @@ def test_primary_refresh_command_payload_uses_explicit_codex_and_claude_roots():
     assert summary.totals.total_tokens == 7570
 
 
+def test_primary_refresh_command_payload_uses_all_explicit_usage_import_roots():
+    connection = memory_connection()
+
+    payload = build_primary_refresh_command_payload(
+        connection=connection,
+        codex_jsonl_root=FIXTURE_ROOT / "codex",
+        claude_code_jsonl_root=FIXTURE_ROOT / "claude_code",
+        cursor_jsonl_root=FIXTURE_ROOT / "cursor",
+        gemini_cli_jsonl_root=FIXTURE_ROOT / "gemini_cli",
+        github_copilot_jsonl_root=FIXTURE_ROOT / "github_copilot",
+        end_day_utc="2026-06-14",
+        started_at="2026-06-14T00:00:00Z",
+    )
+    summary = query_daily_summary(connection, "2026-06-14")
+
+    assert [item["events_seen"] for item in payload["refresh_results"]] == [2, 2, 1, 1, 1]
+    assert payload["storage_summary"]["summary"]["totals"]["total_tokens"] == 17040
+    assert summary.totals.total_tokens == 17040
+
+
 def test_primary_refresh_command_payload_without_roots_records_setup_only():
     payload = build_primary_refresh_command_payload(
         end_day_utc="2026-06-14",
@@ -354,6 +380,9 @@ def test_primary_refresh_command_payload_does_not_return_source_paths():
     payload = build_primary_refresh_command_payload(
         codex_jsonl_root=FIXTURE_ROOT / "codex",
         claude_code_jsonl_root=FIXTURE_ROOT / "claude_code",
+        cursor_jsonl_root=FIXTURE_ROOT / "cursor",
+        gemini_cli_jsonl_root=FIXTURE_ROOT / "gemini_cli",
+        github_copilot_jsonl_root=FIXTURE_ROOT / "github_copilot",
         end_day_utc="2026-06-14",
         started_at="2026-06-14T00:00:00Z",
     )

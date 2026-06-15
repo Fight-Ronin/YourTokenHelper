@@ -32,3 +32,8 @@ The `backend.storage.summary_command_cli` module uses the same internal
 environment variable to read an existing SQLite aggregate summary without
 creating an empty database. Missing persisted storage returns a structured
 unavailable error instead of fake zero usage.
+The `backend.sources.openai_admin_command_cli` module uses the same
+stdin/stdout shape for the PR6 OpenAI Admin fixture/payload sync boundary. It
+accepts aggregate Admin usage/cost payloads, writes hashed API-key/project
+aggregates to SQLite, and returns sync metadata plus `storage_summary` without
+echoing raw OpenAI IDs, fixture paths, or database paths.

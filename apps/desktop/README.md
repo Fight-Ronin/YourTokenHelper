@@ -10,52 +10,48 @@ PR3 scope:
 - do not connect to real local parsers, SQLite, or live APIs.
 
 The header `Refresh` button is a shortcut for the same gated manual refresh
-path used by the Sources view. It stays disabled until Codex and Claude Code
-roots are present, saved, and the refresh command is not already running; it
+path used by the Sources view. It stays disabled until at least one source root
+is present, saved, and the refresh command is not already running; it
 does not infer local paths or use a separate sync path.
-The Sources view also shows disabled explicit-root setup rows for Codex and
-Claude Code; these rows do not open a picker, call Tauri, or read local paths.
-Codex is tracked as `Selected (mock)` while Claude Code remains `Not selected`,
-but the visible `displayValue` is a safe label such as
-`Selected, path hidden` or `No root selected`; neither state displays a real
+The Sources view shows explicit-root setup rows for Codex, Claude Code, Cursor,
+Gemini CLI, and GitHub Copilot. The visible `displayValue` is a safe label such
+as `Selected, path hidden` or `No root selected`; neither state displays a real
 root path.
-Those setup rows live in the typed `explicitRootMockRows` fixture, which keeps
-Cursor, Gemini CLI, and GitHub Copilot as status-only/report-only paths.
-Rows also display typed `pathPolicyLabels` so status-only sources are labeled as
-`No local parser` and report-only sources stay labeled as `Official report`.
-Rows also include typed `nextStep` hints so Codex and Claude Code point to
-explicit-root setup, Cursor stays manual/status-only, Gemini CLI points to
-telemetry/export setup, and GitHub Copilot points to official reports without
-storing local paths.
-The fixture also exposes `getManualRefreshReadiness`; it treats Codex's
-`Selected (mock)` label as still missing an explicit root, so mock mode cannot
-accidentally enable refresh from label-only state.
-The readiness helper also models the future disabled-to-enabled transition:
-only selected Codex and Claude Code roots plus explicit Tauri wiring can produce
-`canRun: true`. The mock UI still passes the default unwired state.
-The pure `buildExplicitRootSetupRows` helper can take transient Codex and
-Claude Code root selections and return path-free setup rows. It can mark roots
-as selected for readiness checks without serializing or displaying the supplied
+Those setup rows live in the typed `explicitRootMockRows` fixture. Rows display
+typed `pathPolicyLabels`, including `Path hidden` for local/import roots and
+`Official report import` for the Copilot report import path.
+Rows also include typed `nextStep` hints: Codex and Claude Code point to
+explicit-root setup, Cursor points to usage export import, Gemini CLI points to
+telemetry/export import, and GitHub Copilot points to official report import
+without storing local paths in UI payloads.
+The fixture also exposes `getManualRefreshReadiness`; it treats the empty-root
+default as blocked and any selected explicit import root plus Tauri wiring as
+ready. This models the disabled-to-enabled transition without requiring every
+source to be configured.
+The pure `buildExplicitRootSetupRows` helper can take transient root selections
+for any primary local source and return path-free setup rows. It can mark roots
+as selected for readiness checks without serializing or displaying supplied
 root values.
-`applyExplicitRootSetupAction` is the pure future picker boundary for those
-hidden roots: select actions trim and store only the hidden command draft value,
-clear actions remove it, and setup rows still render path-free labels.
+`applyExplicitRootSetupAction` is the pure picker/manual-entry boundary for
+those hidden roots: select actions trim and store only the hidden command draft
+value, clear actions remove it, and setup rows still render path-free labels.
 `buildManualRefreshDraftFromHiddenRoots` composes those path-free rows with the
-manual refresh readiness check. It exposes a trimmed command draft only when
-both explicit roots and bridge wiring are ready; otherwise the draft stays
+manual refresh readiness check. It exposes a trimmed command draft only when at
+least one explicit root and bridge wiring are ready; otherwise the draft stays
 `null`.
 The Sources view consumes that hidden-root boundary with empty roots today, so
 it renders path-free setup rows and missing-root readiness while keeping the
 refresh action disabled.
-The explicit-root rows now use masked manual inputs for Codex and Claude Code
+The explicit-root rows now use masked manual inputs for all five primary sources
 instead of an OS picker. Typed values update only the hidden command draft; the
 visible setup rows continue to show path-free labels.
 This keeps browser autocomplete and spellcheck disabled.
 The Sources view also exposes explicit `Save roots` and `Forget` controls.
-Saving writes the hidden Codex and Claude Code roots to a Tauri app-data config
-file only after user action; the UI continues to show path-free labels and
+Saving writes hidden source roots to a Tauri app-data config file only after
+user action; the same config can hold Codex, Claude Code, Cursor, Gemini CLI,
+and GitHub Copilot import roots. The UI continues to show path-free labels and
 command responses still do not echo root values. `Forget` clears that local
-config. Auto refresh stays disabled until both roots are ready and saved, then
+config. Auto refresh stays disabled until at least one root is ready and saved, then
 uses the saved roots while the app is open at a fixed 15-minute interval.
 The Sources view imports the production command client behind that gate. It
 names `refresh_sources_manual`, tracks running/success/failure states, and keeps
@@ -125,7 +121,7 @@ The runtime Sources action derives `end_day_utc` from the current UTC day with
 `manualRefreshEndDayUtc`; the fixed `2026-06-14` date remains only in
 deterministic command samples and tests.
 The separate gated manual refresh args helper,
-`buildGatedRefreshSourcesManualArgs`, requires both Codex and Claude Code roots
+`buildGatedRefreshSourcesManualArgs`, requires at least one explicit source root
 before producing args for future live refresh wiring. It reuses the same
 structured `invalid_refresh_request` payload and still does not infer,
 discover, or read local paths.
@@ -146,6 +142,9 @@ user directories:
 
 - Codex root: `experiments/fixtures/local_sources/codex`
 - Claude Code root: `experiments/fixtures/local_sources/claude_code`
+- Cursor root: `experiments/fixtures/local_sources/cursor`
+- Gemini CLI root: `experiments/fixtures/local_sources/gemini_cli`
+- GitHub Copilot root: `experiments/fixtures/local_sources/github_copilot`
 
 Start the shell with:
 
@@ -154,9 +153,9 @@ conda run -n tokenviz npm run tauri -- dev
 ```
 
 Automation must request explicit approval before running this GUI smoke. During
-manual review, enter the two fixture roots in the Sources view masked inputs and
+manual review, enter any one or all fixture roots in the Sources view masked inputs and
 click `Refresh`. Expected result: the Manual Refresh panel reports
-`Updated 7,570 aggregate tokens`, Daily and Weekly switch to
+`Updated 17,040 aggregate tokens` when all five fixture roots are supplied, Daily and Weekly switch to
 `Live local aggregate`, Last Refresh shows only aggregate sync metadata, and no
 fixture root, filename, prompt, response, request body, transcript, tool output,
 or code snippet is displayed. Restarting the app should read the saved aggregate
@@ -169,7 +168,7 @@ enabled from the Manual Refresh panel and should reuse the same
 
 `src-tauri/src/lib.rs` exposes a static `source_refresh_summary_sample` command for command-shape checks. It embeds the shared JSON sample at build time; it does not read local files or connect to backend parsers.
 The Rust crate also registers the production `refresh_sources_manual` command,
-but the command is gated: it requires explicit Codex and Claude Code roots
+but the command is gated: it requires at least one explicit source root
 before spawning the backend process and returns structured
 `invalid_refresh_request` errors without echoing supplied root values.
 It mirrors the manual refresh args as a snake_case `RefreshSourcesManualArgs`
@@ -196,7 +195,7 @@ summary shape, and reports unavailable storage with a structured error instead
 of creating an empty database or showing fake zero usage.
 It also registers `load_saved_source_roots`, `save_source_roots`, and
 `clear_saved_source_roots` for the explicit-root app-data config. Those commands
-trim saved roots, keep auto refresh disabled unless both primary roots are
+trim saved roots, keep auto refresh disabled unless at least one source root is
 present, and return fixed redacted errors on config failures.
 The desktop TypeScript contract also imports both shared samples, so command
 tests do not hand-roll the structured error payload.

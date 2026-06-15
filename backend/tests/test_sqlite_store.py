@@ -5,6 +5,7 @@ import pytest
 from backend.core import AllowanceWindow, ContractError, UsageEvent
 from backend.fixtures.mock_summary import mock_allowance_windows, mock_usage_events
 from backend.storage import (
+    CostBucketRecord,
     clear_aggregate_cache,
     initialize_schema,
     list_sources,
@@ -12,8 +13,10 @@ from backend.storage import (
     query_cost_total_usd,
     query_daily_summary,
     query_daily_trend,
+    query_refresh_state,
     query_rolling_7d_summary,
     query_usage_breakdown,
+    record_cost_records,
     record_sync_run,
     record_usage_events,
     replace_allowance_windows,
@@ -130,6 +133,94 @@ def test_cost_queries_return_none_when_cost_data_is_unavailable():
 
     assert query_cost_total_usd(connection, "2026-06-14", "2026-06-14") == pytest.approx(1.03)
     assert query_cost_total_usd(connection, "2026-06-13", "2026-06-13") is None
+
+
+def test_cost_records_do_not_count_as_usage_events():
+    connection = memory_connection()
+
+    record_cost_records(
+        connection,
+        [
+            CostBucketRecord(
+                day_utc="2026-06-14",
+                source_kind="openai_api_cost",
+                source_id="openai_api_cost:admin_api",
+                project_id="project_hash",
+                api_key_id="api_key_hash",
+                cost_usd=1.25,
+            )
+        ],
+    )
+
+    assert query_daily_summary(connection, "2026-06-14").event_count == 0
+    assert query_cost_total_usd(connection, "2026-06-14", "2026-06-14") == pytest.approx(1.25)
+    assert list_sources(connection)[0]["source_kind"] == "openai_api_cost"
+
+    with pytest.raises(ContractError):
+        CostBucketRecord(
+            day_utc="2026-06-14",
+            source_kind="openai_api_cost",
+            source_id="openai_api_cost:admin_api",
+            cost_usd=True,
+        )
+    with pytest.raises(ContractError):
+        CostBucketRecord(
+            day_utc="2026-06-14",
+            source_kind="openai_api_cost",
+            source_id="openai_api_cost:admin_api",
+            cost_usd=1.25,
+            currency=None,
+        )
+
+
+def test_refresh_state_reports_never_refreshed_before_sync_runs():
+    connection = memory_connection()
+
+    assert query_refresh_state(connection) == {
+        "last_attempt_at": None,
+        "last_success_at": None,
+        "last_status": "never_refreshed",
+        "successful_source_count": 0,
+        "attempted_source_count": 0,
+        "events_seen": 0,
+    }
+
+
+def test_refresh_state_uses_latest_sync_run_per_source():
+    connection = memory_connection()
+    record_sync_run(
+        connection,
+        source_kind="codex",
+        source_id="codex:local_jsonl",
+        status="ready",
+        started_at="2026-06-14T00:00:00Z",
+        events_seen=2,
+    )
+    record_sync_run(
+        connection,
+        source_kind="claude_code",
+        source_id="claude_code:local_jsonl",
+        status="permission_denied",
+        started_at="2026-06-14T00:01:00Z",
+        events_seen=0,
+    )
+    record_sync_run(
+        connection,
+        source_kind="claude_code",
+        source_id="claude_code:local_jsonl",
+        status="ready",
+        started_at="2026-06-14T00:02:00Z",
+        events_seen=3,
+    )
+
+    assert query_refresh_state(connection) == {
+        "last_attempt_at": "2026-06-14T00:02:00Z",
+        "last_success_at": "2026-06-14T00:02:00Z",
+        "last_status": "succeeded",
+        "successful_source_count": 2,
+        "attempted_source_count": 2,
+        "events_seen": 5,
+    }
 
 
 def test_usage_breakdowns_cover_api_key_model_and_project():

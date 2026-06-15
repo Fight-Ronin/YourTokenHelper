@@ -13,7 +13,13 @@ from typing import Iterable
 
 from backend.core import ContractError
 from backend.sources.base import SourceAdapter, SourceState
-from backend.sources.jsonl_usage import ClaudeCodeJsonlAdapter, CodexJsonlAdapter
+from backend.sources.jsonl_usage import (
+    ClaudeCodeJsonlAdapter,
+    CodexJsonlAdapter,
+    CursorJsonlAdapter,
+    GeminiCliTelemetryAdapter,
+    GithubCopilotReportAdapter,
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,21 @@ def jsonl_adapter_for_candidate(candidate: JsonlSourceCandidate) -> SourceAdapte
             root=candidate.root,
             source_id=candidate.source_id or "claude_code:local_jsonl",
         )
+    if candidate.source_kind == "cursor":
+        return CursorJsonlAdapter(
+            root=candidate.root,
+            source_id=candidate.source_id or "cursor:usage_import",
+        )
+    if candidate.source_kind == "gemini_cli":
+        return GeminiCliTelemetryAdapter(
+            root=candidate.root,
+            source_id=candidate.source_id or "gemini_cli:telemetry_import",
+        )
+    if candidate.source_kind == "github_copilot":
+        return GithubCopilotReportAdapter(
+            root=candidate.root,
+            source_id=candidate.source_id or "github_copilot:official_report",
+        )
     raise ContractError(
-        f"{candidate.source_kind} does not have a mature aggregate JSONL adapter"
+        f"{candidate.source_kind} does not have a supported aggregate adapter"
     )

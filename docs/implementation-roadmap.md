@@ -298,6 +298,8 @@ Connect Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot parsers/impor
 
 ## PR 6: OpenAI API Cost Source
 
+Status: first backend slice in progress.
+
 ### Goal
 
 Connect the real OpenAI Admin Usage API and secondary cost paths to local aggregate storage.
@@ -307,6 +309,7 @@ Connect the real OpenAI Admin Usage API and secondary cost paths to local aggreg
 - Add secure storage for the OpenAI Admin API key.
 - Add key validation for usage and costs access.
 - Add manual sync.
+- Add a backend-only payload/fixture sync command before live key handling.
 - Ingest usage buckets.
 - Ingest cost buckets when available.
 - Record sync runs.

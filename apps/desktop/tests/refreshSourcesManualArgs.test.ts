@@ -8,6 +8,7 @@ const valid = buildRefreshSourcesManualArgs({
   endDayUtc: " 2026-06-14 ",
   codexJsonlRoot: " synthetic/codex ",
   claudeCodeJsonlRoot: " ",
+  cursorJsonlRoot: " synthetic/cursor ",
   startedAt: " 2026-06-14T00:00:00Z "
 });
 
@@ -15,6 +16,7 @@ assert(valid.ok, "expected valid draft to build args");
 assertDeepEqual(valid.args, {
   end_day_utc: "2026-06-14",
   codex_jsonl_root: "synthetic/codex",
+  cursor_jsonl_root: "synthetic/cursor",
   started_at: "2026-06-14T00:00:00Z"
 });
 assert(!("claude_code_jsonl_root" in valid.args), "blank optional root should be omitted");
@@ -41,15 +43,13 @@ assertDeepEqual(invalidCalendarDate.error, invalidFormat.error);
 
 const gatedValid = buildGatedRefreshSourcesManualArgs({
   endDayUtc: "2026-06-14",
-  codexJsonlRoot: "synthetic/codex",
-  claudeCodeJsonlRoot: "synthetic/claude-code"
+  githubCopilotJsonlRoot: "synthetic/copilot-report"
 });
 
-assert(gatedValid.ok, "expected gated draft with both roots to build args");
+assert(gatedValid.ok, "expected gated draft with one explicit import root to build args");
 assertDeepEqual(gatedValid.args, {
   end_day_utc: "2026-06-14",
-  codex_jsonl_root: "synthetic/codex",
-  claude_code_jsonl_root: "synthetic/claude-code"
+  github_copilot_jsonl_root: "synthetic/copilot-report"
 });
 
 assert(
@@ -61,31 +61,16 @@ assert(
   "manual refresh should roll the UTC day at UTC midnight"
 );
 
-const gatedMissingCodex = buildGatedRefreshSourcesManualArgs({
-  endDayUtc: "2026-06-14",
-  claudeCodeJsonlRoot: "synthetic/claude-code"
+const gatedMissingAnyRoot = buildGatedRefreshSourcesManualArgs({
+  endDayUtc: "2026-06-14"
 });
 
-assert(!gatedMissingCodex.ok, "expected missing Codex root to block gated args");
-assertDeepEqual(gatedMissingCodex.error, {
+assert(!gatedMissingAnyRoot.ok, "expected missing explicit roots to block gated args");
+assertDeepEqual(gatedMissingAnyRoot.error, {
   error: {
     code: "invalid_refresh_request",
     field: "codex_jsonl_root",
-    message: "codex_jsonl_root is required for manual refresh"
-  }
-});
-
-const gatedMissingClaudeCode = buildGatedRefreshSourcesManualArgs({
-  endDayUtc: "2026-06-14",
-  codexJsonlRoot: "synthetic/codex"
-});
-
-assert(!gatedMissingClaudeCode.ok, "expected missing Claude Code root to block gated args");
-assertDeepEqual(gatedMissingClaudeCode.error, {
-  error: {
-    code: "invalid_refresh_request",
-    field: "claude_code_jsonl_root",
-    message: "claude_code_jsonl_root is required for manual refresh"
+    message: "at least one source root is required for manual refresh"
   }
 });
 

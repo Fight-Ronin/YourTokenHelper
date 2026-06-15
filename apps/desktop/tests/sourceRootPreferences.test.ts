@@ -33,6 +33,9 @@ assert(autoRefreshStatusLabel(defaults, false) === "Needs saved roots", "auto re
 const preferences = sourceRootPreferencesFromSaved({
   codex_jsonl_root: " synthetic/codex ",
   claude_code_jsonl_root: " synthetic/claude-code ",
+  cursor_jsonl_root: " synthetic/cursor ",
+  gemini_cli_jsonl_root: " synthetic/gemini ",
+  github_copilot_jsonl_root: " synthetic/copilot ",
   auto_refresh_enabled: true,
   auto_refresh_interval_minutes: 30
 });
@@ -40,7 +43,10 @@ const preferences = sourceRootPreferencesFromSaved({
 assertDeepEqual(preferences, {
   rootDraft: {
     codexJsonlRoot: "synthetic/codex",
-    claudeCodeJsonlRoot: "synthetic/claude-code"
+    claudeCodeJsonlRoot: "synthetic/claude-code",
+    cursorJsonlRoot: "synthetic/cursor",
+    geminiCliJsonlRoot: "synthetic/gemini",
+    githubCopilotJsonlRoot: "synthetic/copilot"
   },
   hasSavedRoots: true,
   autoRefreshEnabled: true,
@@ -98,7 +104,7 @@ assert(
     canInvoke: false,
     isRunning: false,
     rootsAreSaved: false
-  }) === "Save Codex and Claude roots in Sources first",
+  }) === "Save at least one source root in Sources first",
   "header title should explain missing setup"
 );
 assert(
@@ -130,6 +136,9 @@ const savedPayload = savedSourceRootsPayloadFromPreferences(preferences);
 assertDeepEqual(savedPayload, {
   codex_jsonl_root: "synthetic/codex",
   claude_code_jsonl_root: "synthetic/claude-code",
+  cursor_jsonl_root: "synthetic/cursor",
+  gemini_cli_jsonl_root: "synthetic/gemini",
+  github_copilot_jsonl_root: "synthetic/copilot",
   auto_refresh_enabled: true,
   auto_refresh_interval_minutes: 30
 });
@@ -140,7 +149,7 @@ const missingClaude = sourceRootPreferencesFromSaved({
   auto_refresh_interval_minutes: 2
 });
 assert(missingClaude.hasSavedRoots, "partial saved roots should be remembered");
-assert(!missingClaude.autoRefreshEnabled, "partial roots must not enable auto refresh");
+assert(missingClaude.autoRefreshEnabled, "one saved root may enable auto refresh");
 assert(
   missingClaude.autoRefreshIntervalMinutes === DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES,
   "too-short intervals should normalize to default"

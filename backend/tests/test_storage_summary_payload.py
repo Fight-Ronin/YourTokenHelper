@@ -44,6 +44,14 @@ def test_storage_payload_matches_mock_summary_shape_from_seed_data():
         "stores_response_content": False,
         "stores_tool_output": False,
     }
+    assert payload["refresh_state"] == {
+        "last_attempt_at": None,
+        "last_success_at": None,
+        "last_status": "never_refreshed",
+        "successful_source_count": 0,
+        "attempted_source_count": 0,
+        "events_seen": 0,
+    }
     assert payload["summary"] == expected["summary"]
     assert payload["allowance_windows"] == expected["allowance_windows"]
     assert payload["source_states"] == expected["source_states"]
@@ -54,6 +62,7 @@ def test_storage_seed_fixture_builds_the_same_payload_shape():
     expected = build_mock_summary_payload()
 
     assert payload["generated_from"] == "backend.fixtures.storage_seed_summary"
+    assert payload["refresh_state"]["last_status"] == "never_refreshed"
     assert payload["summary"] == expected["summary"]
     assert payload["allowance_windows"] == expected["allowance_windows"]
     assert payload["source_states"] == expected["source_states"]

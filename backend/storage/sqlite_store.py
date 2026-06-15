@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -16,6 +17,7 @@ from backend.core.models import (
     TokenTotals,
     UsageEvent,
     normalize_utc_timestamp,
+    validate_non_negative_int,
 )
 
 
@@ -26,6 +28,30 @@ BREAKDOWN_COLUMNS = {
     "project_id": "project_id",
     "source_kind": "source_kind",
 }
+
+
+@dataclass(frozen=True)
+class CostBucketRecord:
+    day_utc: str
+    source_kind: str
+    source_id: str
+    cost_usd: float
+    model: str | None = None
+    project_id: str | None = None
+    api_key_id: str | None = None
+    currency: str = "USD"
+    event_count: int = 1
+
+    def __post_init__(self) -> None:
+        _validate_day(self.day_utc)
+        _validate_source(self.source_kind, self.source_id, "official")
+        if isinstance(self.cost_usd, bool) or not isinstance(self.cost_usd, (int, float)):
+            raise ContractError("cost_usd must be a number")
+        if self.cost_usd < 0:
+            raise ContractError("cost_usd must be non-negative")
+        if not isinstance(self.currency, str) or self.currency.strip().upper() != "USD":
+            raise ContractError("only USD cost buckets are supported")
+        validate_non_negative_int("event_count", self.event_count)
 
 
 def connect_database(path: str | Path) -> sqlite3.Connection:
@@ -183,6 +209,12 @@ def record_usage_events(connection: sqlite3.Connection, events: Iterable[UsageEv
             _record_usage_event(connection, event)
 
 
+def record_cost_records(connection: sqlite3.Connection, records: Iterable[CostBucketRecord]) -> None:
+    with connection:
+        for record in records:
+            _record_cost_record(connection, record)
+
+
 def replace_usage_events_for_source_window(
     connection: sqlite3.Connection,
     *,
@@ -216,6 +248,36 @@ def replace_usage_events_for_source_window(
         )
         for event in event_list:
             _record_usage_event(connection, event)
+
+
+def replace_cost_records_for_source_window(
+    connection: sqlite3.Connection,
+    *,
+    source_kind: str,
+    source_id: str,
+    start_day_utc: str,
+    end_day_utc: str,
+    records: Iterable[CostBucketRecord],
+) -> None:
+    _validate_source(source_kind, source_id, "official")
+    start_day, end_day = _validate_day_range(start_day_utc, end_day_utc)
+    record_list = list(records)
+    for record in record_list:
+        if record.source_kind != source_kind or record.source_id != source_id:
+            raise ContractError("replacement cost records must match the source")
+        if not start_day <= record.day_utc <= end_day:
+            raise ContractError("replacement cost records must stay within the source window")
+
+    with connection:
+        connection.execute(
+            """
+            DELETE FROM cost_buckets
+            WHERE source_kind = ? AND source_id = ? AND day_utc BETWEEN ? AND ?
+            """,
+            (source_kind, source_id, start_day, end_day),
+        )
+        for record in record_list:
+            _record_cost_record(connection, record)
 
 
 def replace_allowance_windows(
@@ -403,6 +465,47 @@ def record_sync_run(
     return int(cursor.lastrowid)
 
 
+def query_refresh_state(connection: sqlite3.Connection) -> dict[str, Any]:
+    rows = connection.execute(
+        """
+        SELECT source_kind, source_id, status, started_at, events_seen
+        FROM sync_runs
+        WHERE id IN (
+            SELECT MAX(id)
+            FROM sync_runs
+            GROUP BY source_kind, source_id
+        )
+        """
+    ).fetchall()
+    if not rows:
+        return {
+            "last_attempt_at": None,
+            "last_success_at": None,
+            "last_status": "never_refreshed",
+            "successful_source_count": 0,
+            "attempted_source_count": 0,
+            "events_seen": 0,
+        }
+
+    ready_rows = [row for row in rows if row["status"] == "ready"]
+    failed_rows = [
+        row
+        for row in rows
+        if row["status"] in {"error", "permission_denied"}
+    ]
+    return {
+        "last_attempt_at": max(row["started_at"] for row in rows),
+        "last_success_at": max((row["started_at"] for row in ready_rows), default=None),
+        "last_status": _refresh_status_from_rows(
+            ready_count=len(ready_rows),
+            failed_count=len(failed_rows),
+        ),
+        "successful_source_count": len(ready_rows),
+        "attempted_source_count": len(rows),
+        "events_seen": sum(int(row["events_seen"] or 0) for row in rows),
+    }
+
+
 def clear_aggregate_cache(connection: sqlite3.Connection) -> None:
     with connection:
         connection.execute("DELETE FROM usage_buckets")
@@ -431,7 +534,7 @@ def _record_usage_event(connection: sqlite3.Connection, event: UsageEvent) -> No
         _bucket_text(event.project_id),
         _bucket_text(event.api_key_id),
         event.confidence,
-        1,
+        event.request_count,
         totals.input_tokens,
         totals.output_tokens,
         totals.cached_input_tokens,
@@ -513,6 +616,57 @@ def _record_usage_event(connection: sqlite3.Connection, event: UsageEvent) -> No
         )
 
 
+def _record_cost_record(connection: sqlite3.Connection, record: CostBucketRecord) -> None:
+    _write_source(
+        connection,
+        source_kind=record.source_kind,
+        source_id=record.source_id,
+        confidence="official",
+        status="observed",
+        display_name=None,
+        is_enabled=True,
+        preserve_existing_settings=True,
+    )
+    connection.execute(
+        """
+        INSERT INTO cost_buckets (
+            day_utc,
+            source_kind,
+            source_id,
+            model,
+            project_id,
+            api_key_id,
+            currency,
+            event_count,
+            cost_usd
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(
+            day_utc,
+            source_kind,
+            source_id,
+            model,
+            project_id,
+            api_key_id,
+            currency
+        ) DO UPDATE SET
+            event_count = cost_buckets.event_count + excluded.event_count,
+            cost_usd = cost_buckets.cost_usd + excluded.cost_usd
+        """,
+        (
+            record.day_utc,
+            record.source_kind,
+            record.source_id,
+            _bucket_text(record.model),
+            _bucket_text(record.project_id),
+            _bucket_text(record.api_key_id),
+            record.currency.strip().upper(),
+            record.event_count,
+            record.cost_usd,
+        ),
+    )
+
+
 def _query_usage_summary(
     connection: sqlite3.Connection,
     start_day_utc: str,
@@ -583,6 +737,16 @@ def _totals_from_row(row: sqlite3.Row) -> TokenTotals:
         reasoning_output_tokens=int(row["reasoning_output_tokens"] or 0),
         total_tokens=int(row["total_tokens"] or 0),
     )
+
+
+def _refresh_status_from_rows(*, ready_count: int, failed_count: int) -> str:
+    if ready_count > 0 and failed_count > 0:
+        return "partial"
+    if ready_count > 0:
+        return "succeeded"
+    if failed_count > 0:
+        return "failed"
+    return "blocked"
 
 
 def _write_source(

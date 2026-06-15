@@ -7,6 +7,9 @@ from backend.core import ContractError
 from backend.sources import (
     ClaudeCodeJsonlAdapter,
     CodexJsonlAdapter,
+    CursorJsonlAdapter,
+    GeminiCliTelemetryAdapter,
+    GithubCopilotReportAdapter,
     sync_source_adapter,
 )
 from backend.sources.jsonl_usage import read_usage_jsonl_events
@@ -56,6 +59,100 @@ def test_claude_jsonl_adapter_reads_cache_read_and_creation_tokens():
     assert summary.event_count == 2
     assert summary.by_source["claude_code"].total_tokens == 5030
     assert summary.by_source["claude_code"].cached_input_tokens == 1050
+
+
+def test_cursor_jsonl_adapter_reads_explicit_usage_import():
+    connection = memory_connection()
+    adapter = CursorJsonlAdapter(FIXTURE_ROOT / "cursor")
+
+    result = sync_source_adapter(
+        connection,
+        adapter,
+        started_at="2026-06-14T00:00:00Z",
+    )
+    summary = query_daily_summary(connection, "2026-06-14")
+
+    assert result.state.status == "ready"
+    assert result.state.confidence == "local_estimated"
+    assert result.events_seen == 1
+    assert summary.by_source["cursor"].total_tokens == 3780
+
+
+def test_gemini_cli_telemetry_adapter_whitelists_token_fields():
+    connection = memory_connection()
+    adapter = GeminiCliTelemetryAdapter(FIXTURE_ROOT / "gemini_cli")
+
+    result = sync_source_adapter(
+        connection,
+        adapter,
+        started_at="2026-06-14T00:00:00Z",
+    )
+    summary = query_daily_summary(connection, "2026-06-14")
+
+    assert result.state.status == "ready"
+    assert result.events_seen == 1
+    assert summary.by_source["gemini_cli"].total_tokens == 2250
+    assert summary.by_source["gemini_cli"].input_tokens == 1800
+    assert summary.by_source["gemini_cli"].output_tokens == 360
+    assert summary.by_source["gemini_cli"].cached_input_tokens == 120
+    assert summary.by_source["gemini_cli"].reasoning_output_tokens == 90
+
+    events = adapter.read_events()
+    assert events[0].model == "gemini-3-pro"
+    assert events[0].session_id is None
+    assert events[0].raw_source_ref is None
+
+
+def test_jsonl_parser_limits_attributes_payload_to_gemini_cli(tmp_path):
+    path = tmp_path / "telemetry.log"
+    path.write_text(
+        (
+            '{"timestamp":"2026-06-14T04:00:00Z",'
+            '"attributes":{"model":"gemini-3-pro","total_token_count":123,'
+            '"prompt_id":"do-not-store"}}'
+            "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    cursor_events = read_usage_jsonl_events(
+        path,
+        source_kind="cursor",
+        source_id="cursor:test",
+        confidence="local_estimated",
+    )
+    gemini_events = read_usage_jsonl_events(
+        path,
+        source_kind="gemini_cli",
+        source_id="gemini_cli:test",
+        confidence="local_exact",
+    )
+
+    assert cursor_events == []
+    assert len(gemini_events) == 1
+    assert gemini_events[0].model == "gemini-3-pro"
+    assert gemini_events[0].total_tokens == 123
+    assert gemini_events[0].raw_source_ref is None
+
+
+def test_github_copilot_report_adapter_reads_official_report_import():
+    connection = memory_connection()
+    adapter = GithubCopilotReportAdapter(FIXTURE_ROOT / "github_copilot")
+
+    result = sync_source_adapter(
+        connection,
+        adapter,
+        started_at="2026-06-14T00:00:00Z",
+    )
+    summary = query_daily_summary(connection, "2026-06-14")
+    events = adapter.read_events()
+
+    assert result.state.status == "ready"
+    assert result.state.confidence == "official"
+    assert result.events_seen == 1
+    assert summary.by_source["github_copilot"].total_tokens == 3440
+    assert events[0].usage_credits == 3.44
+    assert events[0].cost_usd == 0.0344
 
 
 def test_codex_jsonl_parser_reads_observed_payload_info_last_token_usage(tmp_path):

@@ -10,15 +10,16 @@ The current PR5 backend path supports:
 
 - Codex from an explicit aggregate JSONL root.
 - Claude Code from an explicit aggregate JSONL root.
-- Cursor as a manual-only status until a stable aggregate source is verified.
-- Gemini CLI as setup-required until explicit telemetry or export setup is available.
-- GitHub Copilot as an official-report path; personal local token parsing is not assumed.
+- Cursor from an explicit usage-export JSONL/NDJSON root.
+- Gemini CLI from an explicit telemetry/export root with token fields whitelisted.
+- GitHub Copilot from an explicit official usage metrics report root.
 
 ## Handoff Payload
 
 The command-shaped backend helper is `build_primary_refresh_command_payload`.
-It accepts only explicit Codex and Claude Code JSONL roots; it does not infer
-default local paths.
+It accepts explicit Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot
+import roots; it does not infer default local paths. All roots are optional
+individually, but live refresh requires at least one.
 
 The Codex adapter supports both the synthetic aggregate `usage` fixture shape
 and observed local rollout records with token totals under
@@ -73,10 +74,10 @@ Expected aggregate result for `2026-06-14`:
 | --- | ---: | ---: |
 | Codex | 2 | 2540 |
 | Claude Code | 2 | 5030 |
-| Cursor | 0 | 0 |
-| Gemini CLI | 0 | 0 |
-| GitHub Copilot | 0 | 0 |
-| Total | 4 | 7570 |
+| Cursor | 1 | 3780 |
+| Gemini CLI | 1 | 2250 |
+| GitHub Copilot | 1 | 3440 |
+| Total | 7 | 17040 |
 
 ## Synthetic Desktop Acceptance Smoke
 
@@ -100,31 +101,33 @@ Use these synthetic roots in the Sources view masked inputs:
 | --- | --- |
 | Codex | `experiments/fixtures/local_sources/codex` |
 | Claude Code | `experiments/fixtures/local_sources/claude_code` |
+| Cursor | `experiments/fixtures/local_sources/cursor` |
+| Gemini CLI | `experiments/fixtures/local_sources/gemini_cli` |
+| GitHub Copilot | `experiments/fixtures/local_sources/github_copilot` |
 
 Expected review outcomes:
 
 - The visible setup rows still show path-free labels such as
   `Selected, path hidden`; the typed root values are not echoed elsewhere.
-- The Manual Refresh panel changes from blocked to ready once both roots are
+- The Manual Refresh panel changes from blocked to ready once at least one root is
   present, then the `Refresh` button invokes only `refresh_sources_manual`.
-- Clicking `Save roots` persists the hidden Codex and Claude Code roots to
+- Clicking `Save roots` persists hidden source roots to
   Tauri app-data config only after explicit user action; the UI shows
   `Saved locally` rather than the path values, and `Forget` clears that config.
 - Auto refresh stays disabled until the roots are saved, then reuses the saved
   roots and the same `refresh_sources_manual` command on a fixed 15-minute
   interval while the app is open.
-- The result message is `Updated 7,570 aggregate tokens`.
+- The result message is `Updated 17,040 aggregate tokens` when all five fixture roots are supplied.
 - Daily and rolling 7-day Weekly switch to `Live local aggregate` and show the
-  same 7,570 aggregate-token fixture total.
+  same 17,040 aggregate-token fixture total.
 - The Last Refresh table shows only source, status, confidence, event count,
   and sync-run id metadata; it does not show fixture roots, filenames, prompt
   text, response text, request bodies, raw transcripts, tool output, or code
   snippets.
 - Restarting the desktop shell should load the saved aggregate through
   `load_storage_summary` without creating a fake zero-usage summary.
-- Cursor remains manual/status-only, Gemini CLI remains setup-required, GitHub
-  Copilot remains official-report/manual, and OpenAI API Cost remains a
-  secondary unavailable source.
+- Cursor, Gemini CLI, and GitHub Copilot can be imported through explicit roots;
+  OpenAI API Cost remains a secondary unavailable source.
 
 ## Privacy Boundary
 
@@ -151,13 +154,16 @@ The command boundary currently supports:
   `refresh_sources_manual`.
 - `codex_jsonl_root`, optional explicit path.
 - `claude_code_jsonl_root`, optional explicit path.
+- `cursor_jsonl_root`, optional explicit usage-export path.
+- `gemini_cli_jsonl_root`, optional explicit telemetry/export path.
+- `github_copilot_jsonl_root`, optional explicit official report path.
 - `end_day_utc`, required rolling 7-day end date in strict `YYYY-MM-DD` format.
 - `started_at`, optional synthetic or caller-provided ISO-8601 refresh timestamp.
 
 The saved-root config boundary is separate from refresh args. Tauri registers
 `load_saved_source_roots`, `save_source_roots`, and
-`clear_saved_source_roots`; those commands store only the explicit Codex and
-Claude Code root strings plus auto-refresh settings in app-data config. They do
+`clear_saved_source_roots`; those commands store only explicit source root
+strings plus auto-refresh settings in app-data config. They do
 not add default path discovery and do not put roots in refresh result payloads.
 
 The backend request contract is `PrimaryRefreshCommandRequest`, parsed from
@@ -185,9 +191,8 @@ a stdin/stdout wrapper around `build_primary_refresh_command_response_json`.
 It accepts the same explicit-root JSON args and writes the same
 aggregate-only success/error union without echoing supplied roots.
 
-When no explicit roots are provided, Codex and Claude Code return setup states
-and no usage events are stored. Cursor, Gemini CLI, and GitHub Copilot remain
-status-only paths until their source maturity changes.
+When no explicit roots are provided, all primary local sources return setup,
+manual, or report setup states and no usage events are stored.
 
 ## Desktop Type Mirror
 
@@ -248,36 +253,33 @@ The runtime Sources action derives `end_day_utc` from the current UTC day with
 `manualRefreshEndDayUtc`; the fixed `2026-06-14` date is retained only for
 deterministic command samples and fixture tests.
 The separate `buildGatedRefreshSourcesManualArgs` helper is reserved for future
-manual-refresh UI wiring: it requires both explicit Codex and Claude Code roots
-before producing command args and returns the same structured
-`invalid_refresh_request` payload when either root is missing.
+manual-refresh UI wiring: it requires at least one explicit source root before
+producing command args and returns the same structured
+`invalid_refresh_request` payload when all roots are missing.
 The Sources setup rows live in the typed `explicitRootMockRows` fixture. They
-keep Codex and Claude Code as the only disabled picker rows, preserve
-label-only/no-path state, and keep Cursor, Gemini CLI, and GitHub Copilot as
-status-only or official-report paths.
+cover Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot while
+preserving no-path display state.
 Rows separate their internal setup `state` from the visible `displayValue`, so a
 selected root can render as a safe label such as `Selected, path hidden` without
 printing a source root, filename, or local directory.
 Typed `pathPolicyLabels` make those states visible in the mock Sources panel:
-explicit roots show hidden path display, Cursor and Gemini CLI show no local
-parser, and GitHub Copilot stays official-report only.
+local/import roots show hidden path display, and GitHub Copilot names the
+official report import path.
 Typed `nextStep` hints keep the next action explicit without wiring live sync:
-Codex and Claude Code point to explicit-root setup, Cursor stays manual/status
-only, Gemini CLI points to telemetry/export setup, and GitHub Copilot points to
-official reports.
-The pure `buildExplicitRootSetupRows` helper accepts transient Codex and Claude
-Code root selections and produces path-free setup rows. This keeps selected-root
-readiness separate from root display/storage and does not serialize supplied
-root values into the Sources panel state.
+Codex and Claude Code point to explicit-root setup, Cursor points to usage
+export import, Gemini CLI points to telemetry/export import, and GitHub Copilot
+points to official report import.
+The pure `buildExplicitRootSetupRows` helper accepts transient root selections
+for any primary local source and produces path-free setup rows. This keeps
+selected-root readiness separate from root display/storage and does not
+serialize supplied root values into the Sources panel state.
 `buildManualRefreshDraftFromHiddenRoots` composes those path-free rows with the
-manual refresh readiness check. It exposes a trimmed command draft only when
-both explicit roots and bridge wiring are ready; otherwise the draft stays
+manual refresh readiness check. It exposes a trimmed command draft only when at
+least one explicit root and bridge wiring are ready; otherwise the draft stays
 `null`.
-The same fixture exposes `getManualRefreshReadiness`, which treats Codex's
-`Selected (mock)` label as still missing a real explicit root and keeps the
-manual refresh path blocked until both explicit roots and Tauri wiring exist.
-It can also model the future disabled-to-enabled transition: only selected
-Codex and Claude Code roots plus explicit Tauri wiring produce `canRun: true`.
+The same fixture exposes `getManualRefreshReadiness`, which keeps the empty-root
+default blocked and treats any selected explicit import root plus Tauri wiring
+as `canRun: true`.
 The mock UI continues to use the default unwired state.
 `npm run test:commands` verifies those desktop command contracts without Tauri:
 strict args, command-name separation, success/error narrowing, and the static
@@ -300,7 +302,7 @@ The Tauri command `source_refresh_summary_sample` returns the same static shape
 for command registration checks. It embeds the shared JSON at build time. It is
 not live sync and does not read local files.
 The Rust crate also registers the production `refresh_sources_manual` command,
-but it is gated: it requires explicit Codex and Claude Code roots before
+but it is gated: it requires at least one explicit source root before
 spawning Python and returns structured `invalid_refresh_request` errors without
 echoing supplied root values. The React UI now invokes it only through the
 gated production client after hidden roots are ready.
@@ -328,9 +330,9 @@ structured unavailable error instead of creating an empty database or silently
 showing zero usage.
 The Rust crate also registers `load_saved_source_roots`, `save_source_roots`,
 and `clear_saved_source_roots` for explicit-root app-data config. The config
-stores only saved Codex and Claude Code roots plus auto-refresh settings after
-user action. Saved values are trimmed, auto refresh is disabled unless both
-primary roots are present, and config read/write errors stay redacted.
+stores only saved source roots plus auto-refresh settings after user action.
+Saved values are trimmed, auto refresh is disabled unless at least one source
+root is present, and config read/write errors stay redacted.
 
 ## Handoff Status
 
@@ -338,8 +340,8 @@ Ready for review:
 
 - Backend core usage contracts, SQLite summary queries, and source sync registry
   are in place for Daily and rolling 7-day Weekly summaries.
-- Codex and Claude Code aggregate JSONL adapters work with synthetic fixtures
-  and explicit caller-provided roots.
+- Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot aggregate/import
+  adapters work with synthetic fixtures and explicit caller-provided roots.
 - `build_primary_refresh_command_response_from_mapping` returns the future
   manual refresh success/error union without leaking validation exceptions.
 - JSON bridge helpers return the same success/error union and redacted
@@ -378,10 +380,10 @@ Still blocked by setup:
   `buildManualRefreshDraftFromHiddenRoots` keeps those roots out of setup rows
   while preparing the command draft only after readiness is satisfied. The React
   Sources view consumes that hidden-root boundary with empty roots by default,
-  so it renders missing-root readiness until a user supplies both roots.
+  so it renders missing-root readiness until a user supplies at least one root.
 - The Sources view can save or forget explicit roots through Tauri app-data
   config commands. Saved roots remain hidden in the UI; auto refresh is
-  available only after both roots are ready and saved, and it reuses the same
+  available only after at least one root is ready and saved, and it reuses the same
   gated refresh command while the app is open.
 - `applyExplicitRootSetupAction` models the future picker handoff as a pure
   hidden-root draft update: selecting a root trims the value for the command
@@ -391,9 +393,8 @@ Still blocked by setup:
   `refresh_sources_manual` client, but the empty-root default state is still
   blocked before invocation. Its mock state is centralized in a typed
   `manualRefreshMockState` with `canRun: false`. The separate readiness helper
-  keeps label-only selected roots from counting as real explicit roots, and the
-  panel can display tested path-free needs labels, dynamic root readiness, and
-  tested bridge state without reading paths.
+  keeps empty-root state blocked, and the panel can display tested path-free
+  needs labels, dynamic root readiness, and tested bridge state without reading paths.
 - The production Tauri `refresh_sources_manual` command is registered and React
   can invoke it only through the gated production client when hidden roots are
   ready.
@@ -417,8 +418,8 @@ Still blocked by setup:
   and DeepSeek, but PR5 does not connect live billing APIs or prices.
 - No default local path scanning.
 - No real local user directories are read without explicit roots.
-- No Cursor, Gemini CLI, or GitHub Copilot local parser maturity is claimed
-  beyond the documented status, manual, or official-report states.
+- Cursor, Gemini CLI, and GitHub Copilot support only explicit usage import
+  roots; no default local scanning or remaining-quota inference is claimed.
 - No OpenAI Admin/API cost sync in PR5.
 
 ## Implementation Status Matrix
@@ -426,26 +427,26 @@ Still blocked by setup:
 | Area | Status | Notes |
 | --- | --- | --- |
 | Backend normalized event/storage contract | Ready | Daily and rolling 7-day Weekly summaries are fixture-tested. |
-| Codex and Claude Code explicit-root sync | Ready | Synthetic aggregate JSONL fixtures cover the first parser path; no default path discovery. |
+| Primary source explicit-root sync | Ready | Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot synthetic fixtures cover explicit import paths; no default path discovery. |
 | Backend manual refresh response boundary | Ready | `build_primary_refresh_command_response_from_mapping` returns success or structured `invalid_refresh_request`. |
 | Backend JSON bridge boundary | Ready | JSON args helpers return the same success/error union without echoing source roots. |
 | Backend stdin/stdout bridge | Ready | `backend.sources.refresh_command_cli` wraps the JSON bridge for future process-style Tauri wiring; no default path discovery. |
 | Backend file-backed refresh database boundary | Ready | `YTH_REFRESH_DATABASE_PATH` lets process tests open SQLite storage without accepting a database path in the JSON request payload or echoing the path in errors. |
-| Desktop manual refresh args builder and invoker boundary | Ready | Pure TypeScript converts UI drafts to snake_case args, omits blank optional roots for setup-state requests, has a gated helper that requires both Codex and Claude Code roots before live refresh args are built, invokes only the registered production command when provided a Tauri invoke function, and redacts thrown invoke failures into a fixed unavailable state. |
+| Desktop manual refresh args builder and invoker boundary | Ready | Pure TypeScript converts UI drafts to snake_case args, omits blank optional roots for setup-state requests, has a gated helper that requires at least one source root before live refresh args are built, invokes only the registered production command when provided a Tauri invoke function, and redacts thrown invoke failures into a fixed unavailable state. |
 | Rust/Tauri command-name, args, result, and process contract | Ready | `refresh_sources_manual` is registered behind the Rust-side explicit-root gate; snake_case args shape, success/error result union, Tauri app-data DB path selection, backend module args, stdin serialization, gated process invocation, optional file-backed DB env handoff, persisted `load_storage_summary` readback, and stdout parsing are tested with synthetic fixtures. |
 | Static desktop sample command | Ready | `source_refresh_summary_sample` is registered and returns embedded aggregate JSON only. |
 | Persisted summary readback command | Ready | `load_storage_summary` reads the same app-data SQLite aggregate by internal DB path only, returns storage summary payloads without refresh metadata, and reports missing storage as unavailable instead of zero usage. |
-| Explicit-root config commands | Ready | `load_saved_source_roots`, `save_source_roots`, and `clear_saved_source_roots` store hidden Codex/Claude roots plus auto-refresh settings in app-data only after user action; errors stay redacted and auto refresh requires both roots. |
+| Explicit-root config commands | Ready | `load_saved_source_roots`, `save_source_roots`, and `clear_saved_source_roots` store hidden source roots plus auto-refresh settings in app-data only after user action; errors stay redacted and auto refresh requires at least one root. |
 | Startup persisted-summary readback | Ready | React calls only the read-only `load_storage_summary` command on startup, promotes existing aggregate storage into Daily/Weekly, and falls back to mock data on unavailable or thrown failures without exposing paths. Sources also shows the path-free saved aggregate readback state. |
-| Live desktop refresh action | Gated shell | Sources imports the production command client and calls only `refresh_sources_manual`, but the empty-root default keeps the button disabled until explicit Codex and Claude Code roots are present. |
-| Header refresh shortcut | Gated UI | The header button is labeled `Refresh`, reuses the same `refresh_sources_manual` command draft and running state, and stays disabled until explicit Codex and Claude Code roots are saved. |
+| Live desktop refresh action | Gated shell | Sources imports the production command client and calls only `refresh_sources_manual`, but the empty-root default keeps the button disabled until at least one explicit source root is present. |
+| Header refresh shortcut | Gated UI | The header button is labeled `Refresh`, reuses the same `refresh_sources_manual` command draft and running state, and stays disabled until at least one explicit source root is saved. |
 | Manual refresh UI affordance | Gated UI | Sources shows the command name from typed `manualRefreshMockState`, tested path-free needs labels, dynamic root readiness, tested bridge state, running/success/failure states, auto-refresh state, and a disabled blocked state via `buildManualRefreshDraftFromHiddenRoots`. |
-| Manual root entry shell | Gated UI | Typed `explicitRootMockRows`, masked manual inputs with browser autocomplete/spellcheck disabled, path-free `displayValue` labels, `buildExplicitRootSetupRows`, `buildManualRefreshDraftFromHiddenRoots`, `pathPolicyLabels`, and `nextStep` hints distinguish label-only, selected-explicit-root, no-local-parser, telemetry/export, and official-report states; no OS picker opens and no supplied root is rendered. |
+| Manual root entry shell | Gated UI | Typed `explicitRootMockRows`, masked manual inputs with browser autocomplete/spellcheck disabled, path-free `displayValue` labels, `buildExplicitRootSetupRows`, `buildManualRefreshDraftFromHiddenRoots`, `pathPolicyLabels`, and `nextStep` hints distinguish selected explicit roots, usage-export import, telemetry/export import, and official-report import states; no OS picker opens and no supplied root is rendered. |
 | Refresh-to-dashboard handoff | Gated UI | Successful manual refresh normalizes `storage_summary` into Daily and Weekly dashboard state, labels the shell `Live local aggregate`, and keeps API cost unavailable instead of showing mock dollars. |
 | Last refresh metadata | Gated UI | Sources renders returned `refresh_results` as source/status/confidence/events/sync-run metadata only, with event count and sync-run id formatted as metadata integers rather than token totals; no source roots, local paths, filenames, prompts, responses, request bodies, transcripts, tool output, or code snippets. |
-| Cursor local parser | Status-only | Manual/status path until stable aggregate local data or official export is verified. |
-| Gemini CLI local parser | Status-only | Setup-required until telemetry or export setup is verified. |
-| GitHub Copilot local parser | Status-only | Official-report/manual path unless personal local token fields are verified. |
+| Cursor usage import | Ready | Explicit usage-export JSONL/NDJSON import with local-estimated confidence; no personal quota inference. |
+| Gemini CLI telemetry import | Ready | Explicit telemetry/export import with token fields whitelisted; no prompt/response storage and no quota inference. |
+| GitHub Copilot official report import | Ready | Explicit official metrics report import with official confidence; personal remaining quota is still unavailable. |
 | OpenAI Admin/API cost sync | Out of PR5 | Reserved for PR6 as a secondary source. |
 
 ## Manual Refresh Promotion Checklist
@@ -454,17 +455,15 @@ Before React invokes the registered manual refresh command, the implementation
 must satisfy all of these conditions:
 
 - Refresh runs only after an explicit user action.
-- Codex and Claude Code accept explicit user-selected roots; they do not infer
-  default local paths silently.
+- Codex, Claude Code, Cursor, Gemini CLI, and GitHub Copilot accept explicit
+  user-selected/import roots; they do not infer default local paths silently.
 - The command response remains aggregate-only and must not include prompt text,
   response text, request bodies, raw transcripts, tool output, code snippets,
   source roots, local paths, filenames, or local user directory names.
-- Cursor remains manual/status-only until a stable aggregate local source or
-  official export is verified.
-- Gemini CLI remains setup-required until explicit telemetry or export setup is
-  verified.
-- GitHub Copilot remains official-report/manual unless personal local token
-  fields are verified.
+- Cursor support is limited to explicit usage-export import.
+- Gemini CLI support is limited to explicit telemetry/export import with token
+  fields whitelisted.
+- GitHub Copilot support is limited to explicit official metrics report import.
 - Missing or unavailable allowance data is labeled unavailable, manual, or
   derived; it must not imply exact remaining usage.
 - Missing or unavailable cost data must be labeled unavailable or partial; it
@@ -480,7 +479,7 @@ Before the user-visible action can become enabled and React can invoke the
 registered `refresh_sources_manual` command, all gates below must be satisfied
 in the same review:
 
-- Explicit root selection exists for Codex and Claude Code, and selected labels
+- Explicit root selection exists for at least one primary source, and selected labels
   still do not expose source roots, local paths, filenames, or local user
   directory names.
 - The React action calls only the production `refresh_sources_manual` command;
@@ -494,9 +493,8 @@ in the same review:
   privacy scans for prompts, responses, request bodies, transcripts, tool
   output, code snippets, source roots, paths, filenames, and local user
   directory names.
-- Cursor, Gemini CLI, and GitHub Copilot remain status-only, setup-required, or
-  official-report paths unless separate fixture-backed parser evidence changes
-  their source maturity.
+- Cursor, Gemini CLI, and GitHub Copilot imports remain explicit-root only;
+  none may enable default local scanning or quota inference.
 - Daily and rolling 7-day Weekly summaries continue to be the only live refresh
   targets; Monthly remains out of the first wiring path.
 - Desktop, backend, and Rust tests cover the disabled-to-enabled transition,

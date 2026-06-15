@@ -24,6 +24,9 @@ class PrimaryRefreshCommandRequest:
     end_day_utc: str
     codex_jsonl_root: Path | None = None
     claude_code_jsonl_root: Path | None = None
+    cursor_jsonl_root: Path | None = None
+    gemini_cli_jsonl_root: Path | None = None
+    github_copilot_jsonl_root: Path | None = None
     started_at: str | None = None
 
 
@@ -55,6 +58,9 @@ def primary_refresh_command_request_from_mapping(
         "end_day_utc",
         "codex_jsonl_root",
         "claude_code_jsonl_root",
+        "cursor_jsonl_root",
+        "gemini_cli_jsonl_root",
+        "github_copilot_jsonl_root",
         "started_at",
     }
     unknown_keys = set(data) - allowed_keys
@@ -90,6 +96,15 @@ def primary_refresh_command_request_from_mapping(
             data.get("claude_code_jsonl_root"),
             "claude_code_jsonl_root",
         ),
+        cursor_jsonl_root=_optional_path(data.get("cursor_jsonl_root"), "cursor_jsonl_root"),
+        gemini_cli_jsonl_root=_optional_path(
+            data.get("gemini_cli_jsonl_root"),
+            "gemini_cli_jsonl_root",
+        ),
+        github_copilot_jsonl_root=_optional_path(
+            data.get("github_copilot_jsonl_root"),
+            "github_copilot_jsonl_root",
+        ),
         started_at=started_at,
     )
 
@@ -103,6 +118,9 @@ def build_primary_refresh_command_payload_from_request(
         connection=connection,
         codex_jsonl_root=request.codex_jsonl_root,
         claude_code_jsonl_root=request.claude_code_jsonl_root,
+        cursor_jsonl_root=request.cursor_jsonl_root,
+        gemini_cli_jsonl_root=request.gemini_cli_jsonl_root,
+        github_copilot_jsonl_root=request.github_copilot_jsonl_root,
         end_day_utc=request.end_day_utc,
         started_at=request.started_at,
     )
@@ -197,6 +215,9 @@ def build_primary_refresh_command_payload(
     end_day_utc: str,
     codex_jsonl_root: Path | None = None,
     claude_code_jsonl_root: Path | None = None,
+    cursor_jsonl_root: Path | None = None,
+    gemini_cli_jsonl_root: Path | None = None,
+    github_copilot_jsonl_root: Path | None = None,
     started_at: str | None = None,
     connection: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
@@ -208,6 +229,9 @@ def build_primary_refresh_command_payload(
             primary_jsonl_candidates(
                 codex_jsonl_root=codex_jsonl_root,
                 claude_code_jsonl_root=claude_code_jsonl_root,
+                cursor_jsonl_root=cursor_jsonl_root,
+                gemini_cli_jsonl_root=gemini_cli_jsonl_root,
+                github_copilot_jsonl_root=github_copilot_jsonl_root,
             )
         ),
         end_day_utc=end_day_utc,
@@ -219,12 +243,21 @@ def primary_jsonl_candidates(
     *,
     codex_jsonl_root: Path | None = None,
     claude_code_jsonl_root: Path | None = None,
+    cursor_jsonl_root: Path | None = None,
+    gemini_cli_jsonl_root: Path | None = None,
+    github_copilot_jsonl_root: Path | None = None,
 ) -> list[JsonlSourceCandidate]:
     candidates: list[JsonlSourceCandidate] = []
     if codex_jsonl_root is not None:
         candidates.append(JsonlSourceCandidate("codex", codex_jsonl_root))
     if claude_code_jsonl_root is not None:
         candidates.append(JsonlSourceCandidate("claude_code", claude_code_jsonl_root))
+    if cursor_jsonl_root is not None:
+        candidates.append(JsonlSourceCandidate("cursor", cursor_jsonl_root))
+    if gemini_cli_jsonl_root is not None:
+        candidates.append(JsonlSourceCandidate("gemini_cli", gemini_cli_jsonl_root))
+    if github_copilot_jsonl_root is not None:
+        candidates.append(JsonlSourceCandidate("github_copilot", github_copilot_jsonl_root))
     return candidates
 
 
