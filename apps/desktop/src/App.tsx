@@ -47,10 +47,10 @@ import {
   type SourceRootPersistenceState,
   type SourceRootPreferences
 } from "./commands/sourceRootPreferences.js";
-import mockSummary from "./data/mock-v1-summary.json";
 import {
   buildDashboardSummaryFromRefresh,
   dashboardQualityLabel,
+  emptyDashboardSummaryPayload,
   emptyTokenTotals,
   latestSummaryDay,
   refreshRecencyLabel,
@@ -96,8 +96,6 @@ import type {
   SourceRefreshSummaryPayload,
   TokenTotals
 } from "./types";
-
-const initialPayload = buildDashboardSummaryFromRefresh(mockSummary as RefreshStorageSummaryPayload);
 
 type ViewId = "daily" | "weekly" | "sources" | "api_costs" | "settings";
 type ManualAllowanceFormState = {
@@ -180,9 +178,7 @@ const navItems: Array<{ id: ViewId; label: string; icon: LucideIcon; secondary?:
 const manualAllowanceSourceKinds: readonly SourceKind[] = [
   "codex",
   "claude_code",
-  "cursor",
-  "gemini_cli",
-  "github_copilot"
+  "gemini_cli"
 ];
 const manualAllowanceUnits: readonly AllowanceWindow["unit"][] = ["tokens", "credits", "usd", "requests"];
 const defaultManualAllowanceFormState: ManualAllowanceFormState = {
@@ -199,8 +195,8 @@ const defaultApiProviderCredentialFormState: ApiProviderCredentialFormState = {
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewId>("daily");
-  const [dashboardPayload, setDashboardPayload] = useState<MockSummaryPayload>(initialPayload);
-  const [dashboardDataMode, setDashboardDataMode] = useState<DashboardDataMode>("mock");
+  const [dashboardPayload, setDashboardPayload] = useState<MockSummaryPayload>(() => emptyDashboardSummaryPayload());
+  const [dashboardDataMode, setDashboardDataMode] = useState<DashboardDataMode>("empty");
   const [lastRefreshResults, setLastRefreshResults] = useState<readonly RefreshResult[] | null>(null);
   const [startupStorageReadState, setStartupStorageReadState] = useState<StartupStorageReadState>({ phase: "idle" });
   const [sourceRootPreferences, setSourceRootPreferences] = useState<SourceRootPreferences>(
@@ -315,10 +311,12 @@ export function App() {
   }, []);
 
   function handleRefreshSummary(refreshSummary: SourceRefreshSummaryPayload) {
-    setDashboardPayload(buildDashboardSummaryFromRefresh(refreshSummary.storage_summary));
+    const payload = buildDashboardSummaryFromRefresh(refreshSummary.storage_summary);
+    setDashboardPayload(payload);
     setDashboardDataMode("local_refresh");
     setLastRefreshResults(refreshSummary.refresh_results);
     setStartupStorageReadState({ phase: "loaded" });
+    return payload;
   }
 
   function updateExplicitRoot(sourceKind: ExplicitRootSourceKind, root: string) {
@@ -425,10 +423,10 @@ export function App() {
       return;
     }
 
-    handleRefreshSummary(outcome.result);
+    const payload = handleRefreshSummary(outcome.result);
     setManualRefreshRunState({
       phase: "succeeded",
-      message: manualRefreshSuccessMessage(outcome.result.storage_summary.summary.totals.total_tokens)
+      message: manualRefreshSuccessMessage(payload.summary.totals.total_tokens)
     });
   }
 
@@ -577,9 +575,7 @@ export function App() {
         manualRefreshBoundary.draft.endDayUtc,
         manualRefreshBoundary.draft.codexJsonlRoot,
         manualRefreshBoundary.draft.claudeCodeJsonlRoot,
-        manualRefreshBoundary.draft.cursorJsonlRoot,
-        manualRefreshBoundary.draft.geminiCliJsonlRoot,
-        manualRefreshBoundary.draft.githubCopilotJsonlRoot
+        manualRefreshBoundary.draft.geminiCliJsonlRoot
       ].join("|")
     : "";
 
@@ -615,8 +611,7 @@ export function App() {
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <span>YourTokenHelper</span>
+          <span className="brand-wordmark">YourTokenHelper</span>
         </div>
         <nav className="nav-list">
           {navItems.map((item) => {
@@ -787,7 +782,7 @@ function DailyView({
   const day = latestSummaryDay(payload) ?? manualRefreshEndDayUtc();
   const daily = payload.summary.by_day[day] ?? emptyTokenTotals();
   const dailySourceTotals = sourceTotalsForDay(payload, day);
-  const remaining = firstKnownAllowance(payload, ["codex", "claude_code"]);
+  const remaining = firstKnownAllowance(payload, manualAllowanceSourceKinds);
 
   return (
     <>
@@ -838,7 +833,7 @@ function WeeklyView({
   payload: MockSummaryPayload;
 }) {
   const rolling = payload.summary.rolling_7d;
-  const remaining = firstKnownAllowance(payload, ["codex", "claude_code"]);
+  const remaining = firstKnownAllowance(payload, manualAllowanceSourceKinds);
   const refreshRecency = refreshRecencyLabel(payload.refresh_state);
 
   return (
@@ -1029,7 +1024,7 @@ function StartupStorageStatus({
       </div>
       <div className="manual-refresh-row">
         <span>Dashboard</span>
-        <strong>{dataMode === "local_refresh" ? "Saved aggregate" : "Mock fallback"}</strong>
+        <strong>{startupDashboardModeLabel(dataMode)}</strong>
       </div>
       <div className="manual-refresh-row">
         <span>Mode</span>
@@ -1401,13 +1396,10 @@ function rootDraftValue(sourceKind: ExplicitRootSourceKind, draft: ExplicitRootS
   if (sourceKind === "claude_code") {
     return draft.claudeCodeJsonlRoot ?? "";
   }
-  if (sourceKind === "cursor") {
-    return draft.cursorJsonlRoot ?? "";
-  }
   if (sourceKind === "gemini_cli") {
     return draft.geminiCliJsonlRoot ?? "";
   }
-  return draft.githubCopilotJsonlRoot ?? "";
+  return "";
 }
 
 function ApiCostsView({
@@ -1727,25 +1719,38 @@ function PrimaryMetricStrip({
 
   return (
     <section className="metric-strip" aria-label={`${windowLabel} metrics`}>
-      <MetricTile label="Usage consumed" value={formatTokens(totals.total_tokens)} unit="tokens" tone="primary" />
+      <MetricTile label="Usage consumed" value={formatMetricTokens(totals.total_tokens)} unit="tokens" tone="primary" />
       <MetricTile
         label="Remaining"
         value={remaining ? formatAllowance(remaining) : "Not configured"}
         unit={remaining ? `${remaining.status.replace("_", " ")} estimate` : "manual optional"}
+        tone={remaining ? undefined : "muted"}
       />
-      <MetricTile label="Reset" value={remaining?.reset_at ? formatDate(remaining.reset_at) : "Not configured"} unit="next known reset" />
-      <MetricTile label="Cost estimate" value={costEstimateValue} unit={costEstimateUnit} tone="secondary" />
+      <MetricTile
+        label="Reset"
+        value={remaining?.reset_at ? formatDate(remaining.reset_at) : "Not configured"}
+        unit="next known reset"
+        tone={remaining?.reset_at ? undefined : "muted"}
+      />
+      <MetricTile
+        label="Cost estimate"
+        value={costEstimateValue}
+        unit={costEstimateUnit}
+        tone={costSummary.total_usd === null || costSummary.total_usd === undefined ? "muted" : "secondary"}
+      />
       <MetricTile label="Window" value={windowLabel} unit={dataMode === "mock" ? "mock contract" : "local aggregate"} />
       <MetricTile label="Cached share" value={cachedShare(totals)} unit="input tokens" />
     </section>
   );
 }
 
-function MetricTile({ label, value, unit, tone }: { label: string; value: string; unit: string; tone?: "primary" | "secondary" }) {
+type MetricTileTone = "primary" | "secondary" | "muted";
+
+function MetricTile({ label, value, unit, tone }: { label: string; value: string; unit: string; tone?: MetricTileTone }) {
   const valueClassName = isCompactMetricValue(value, tone) ? "compact-value" : "";
 
   return (
-    <div className={`metric-tile ${tone ?? ""}`}>
+    <div className={["metric-tile", tone].filter(Boolean).join(" ")}>
       <span className="metric-label">{label}</span>
       <strong className={valueClassName}>{value}</strong>
       <span className="metric-unit">{unit}</span>
@@ -1799,14 +1804,14 @@ function SourceStack({
 
 function sourceUsageProgressLabel(progress: SourceUsageProgress) {
   if (progress.kind === "usage_share") {
-    return `${formatPercent(progress.percent)} of usage`;
+    return `${formatPercent(progress.percent)} of visible usage`;
   }
   return `${formatPercent(progress.percent)} limit used`;
 }
 
 function sourceUsageProgressDetail(progress: SourceUsageProgress) {
   if (progress.kind === "usage_share") {
-    return "usage split";
+    return "visible usage split";
   }
   return `${formatCompactNumber(progress.usedAmount)} / ${formatCompactNumber(progress.limitAmount)} ${allowanceUnitLabel(progress.unit)} ${progress.status.replace("_", " ")}`;
 }
@@ -1919,7 +1924,7 @@ function sourceRows(totals: Record<SourceKind, TokenTotals>, payload: MockSummar
     .slice(0, 5);
 }
 
-function isCompactMetricValue(value: string, tone?: "primary" | "secondary") {
+function isCompactMetricValue(value: string, tone?: MetricTileTone) {
   return tone !== "primary" && value.length >= 10;
 }
 
@@ -1930,7 +1935,7 @@ function barPercent(value: number, max: number, minimumVisiblePercent: number) {
   return Math.max(minimumVisiblePercent, Math.round((value / max) * 100));
 }
 
-function firstKnownAllowance(payload: MockSummaryPayload, sourceKinds: SourceKind[]) {
+function firstKnownAllowance(payload: MockSummaryPayload, sourceKinds: readonly SourceKind[]) {
   return payload.allowance_windows.find(
     (window) => sourceKinds.includes(window.source_kind) && window.remaining_amount !== undefined
   );
@@ -2061,15 +2066,30 @@ function optionalTextInput(value: string) {
 }
 
 function headerSubtitle(view: ViewId, dataMode: DashboardDataMode) {
-  const summaryLabel = dataMode === "mock" ? "mock summary" : "latest manual refresh aggregate";
+  const summaryLabel =
+    dataMode === "mock"
+      ? "mock summary"
+      : dataMode === "empty"
+        ? "local aggregate once available"
+        : "latest manual refresh aggregate";
   const subtitles: Record<ViewId, string> = {
     daily: `Local time: Asia/Shanghai. Today from the ${summaryLabel}.`,
     weekly: `Rolling 7-day aggregate from the ${summaryLabel}.`,
     sources: "Connector readiness and confidence labels.",
     api_costs: "Secondary API cost providers; unavailable data stays visible.",
-    settings: "Timezone and privacy defaults for the mock shell."
+    settings: "Timezone and privacy defaults for local aggregate storage."
   };
   return subtitles[view];
+}
+
+function startupDashboardModeLabel(dataMode: DashboardDataMode) {
+  if (dataMode === "local_refresh") {
+    return "Saved aggregate";
+  }
+  if (dataMode === "empty") {
+    return "No local aggregate";
+  }
+  return "Mock fallback";
 }
 
 function configuredUsageSourceKinds(preferences: SourceRootPreferences): SourceKind[] {
@@ -2080,20 +2100,24 @@ function configuredUsageSourceKinds(preferences: SourceRootPreferences): SourceK
   if (preferences.rootDraft.claudeCodeJsonlRoot?.trim()) {
     configured.push("claude_code");
   }
-  if (preferences.rootDraft.cursorJsonlRoot?.trim()) {
-    configured.push("cursor");
-  }
   if (preferences.rootDraft.geminiCliJsonlRoot?.trim()) {
     configured.push("gemini_cli");
-  }
-  if (preferences.rootDraft.githubCopilotJsonlRoot?.trim()) {
-    configured.push("github_copilot");
   }
   return configured;
 }
 
 function formatTokens(value: number) {
   return formatInteger(value);
+}
+
+function formatMetricTokens(value: number) {
+  if (Math.abs(value) < 1_000_000) {
+    return formatTokens(value);
+  }
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 1,
+    notation: "compact"
+  }).format(value);
 }
 
 function formatInteger(value: number) {

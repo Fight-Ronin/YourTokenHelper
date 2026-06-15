@@ -2,9 +2,7 @@ export type RefreshSourcesManualArgs = {
   end_day_utc: string;
   codex_jsonl_root?: string;
   claude_code_jsonl_root?: string;
-  cursor_jsonl_root?: string;
   gemini_cli_jsonl_root?: string;
-  github_copilot_jsonl_root?: string;
   started_at?: string;
 };
 
@@ -12,9 +10,7 @@ export type RefreshSourcesManualDraft = {
   endDayUtc: string;
   codexJsonlRoot?: string;
   claudeCodeJsonlRoot?: string;
-  cursorJsonlRoot?: string;
   geminiCliJsonlRoot?: string;
-  githubCopilotJsonlRoot?: string;
   startedAt?: string;
 };
 
@@ -32,9 +28,7 @@ const REFRESH_ROOT_FIELDS: Array<{
 }> = [
   { arg: "codex_jsonl_root", draft: "codexJsonlRoot" },
   { arg: "claude_code_jsonl_root", draft: "claudeCodeJsonlRoot" },
-  { arg: "cursor_jsonl_root", draft: "cursorJsonlRoot" },
-  { arg: "gemini_cli_jsonl_root", draft: "geminiCliJsonlRoot" },
-  { arg: "github_copilot_jsonl_root", draft: "githubCopilotJsonlRoot" }
+  { arg: "gemini_cli_jsonl_root", draft: "geminiCliJsonlRoot" }
 ];
 
 export type RefreshSourcesManualArgsBuildResult =

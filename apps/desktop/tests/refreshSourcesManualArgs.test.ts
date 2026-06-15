@@ -8,7 +8,7 @@ const valid = buildRefreshSourcesManualArgs({
   endDayUtc: " 2026-06-14 ",
   codexJsonlRoot: " synthetic/codex ",
   claudeCodeJsonlRoot: " ",
-  cursorJsonlRoot: " synthetic/cursor ",
+  geminiCliJsonlRoot: " synthetic/gemini ",
   startedAt: " 2026-06-14T00:00:00Z "
 });
 
@@ -16,7 +16,7 @@ assert(valid.ok, "expected valid draft to build args");
 assertDeepEqual(valid.args, {
   end_day_utc: "2026-06-14",
   codex_jsonl_root: "synthetic/codex",
-  cursor_jsonl_root: "synthetic/cursor",
+  gemini_cli_jsonl_root: "synthetic/gemini",
   started_at: "2026-06-14T00:00:00Z"
 });
 assert(!("claude_code_jsonl_root" in valid.args), "blank optional root should be omitted");
@@ -43,13 +43,13 @@ assertDeepEqual(invalidCalendarDate.error, invalidFormat.error);
 
 const gatedValid = buildGatedRefreshSourcesManualArgs({
   endDayUtc: "2026-06-14",
-  githubCopilotJsonlRoot: "synthetic/copilot-report"
+  geminiCliJsonlRoot: "synthetic/gemini"
 });
 
 assert(gatedValid.ok, "expected gated draft with one explicit import root to build args");
 assertDeepEqual(gatedValid.args, {
   end_day_utc: "2026-06-14",
-  github_copilot_jsonl_root: "synthetic/copilot-report"
+  gemini_cli_jsonl_root: "synthetic/gemini"
 });
 
 assert(

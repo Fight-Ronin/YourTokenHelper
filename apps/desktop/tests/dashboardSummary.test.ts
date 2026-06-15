@@ -2,6 +2,7 @@ import { sourceRefreshSummarySampleCommandContract } from "../src/commands/sourc
 import {
   buildDashboardSummaryFromRefresh,
   dashboardQualityLabel,
+  emptyDashboardSummaryPayload,
   emptyTokenTotals,
   latestSummaryDay,
   refreshRecencyLabel,
@@ -21,13 +22,25 @@ assert(
   "live dashboard should carry refresh recency status"
 );
 assert(
-  dashboardPayload.refresh_state.successful_source_count === 5,
-  "live dashboard should carry ready source count"
+  dashboardPayload.refresh_state.successful_source_count === 3,
+  "live dashboard should normalize ready source count to supported desktop sources"
+);
+assert(
+  dashboardPayload.refresh_state.attempted_source_count === 3,
+  "live dashboard should normalize attempted source count to supported desktop sources"
 );
 assert(dashboardPayload.summary.by_source.codex.total_tokens === 2540, "Codex totals should survive normalization");
 assert(
   dashboardPayload.summary.by_source.claude_code.total_tokens === 5030,
   "Claude Code totals should survive normalization"
+);
+assert(
+  dashboardPayload.summary.totals.total_tokens === 9820,
+  "dashboard totals should exclude unsupported Cursor and GitHub Copilot usage"
+);
+assert(
+  dashboardPayload.summary.by_day["2026-06-14"].total_tokens === 9820,
+  "daily dashboard totals should exclude unsupported Cursor and GitHub Copilot usage"
 );
 assertDeepEqual(
   dashboardPayload.summary.by_source.openai_api_cost,
@@ -86,8 +99,8 @@ assertDeepEqual(
   sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-14"), ["codex", "claude_code"]).map(
     (row) => row.sourceKind
   ),
-  ["claude_code", "codex", "cursor", "github_copilot", "gemini_cli"],
-  "Source Usage rows should hide unavailable zero-token sources after local refresh"
+  ["claude_code", "codex", "gemini_cli"],
+  "Source Usage rows should hide unsupported and unavailable zero-token sources after local refresh"
 );
 const liveUsageRows = sourceUsageRows(sourceTotalsForDay(dashboardPayload, "2026-06-14"), ["codex", "claude_code"]);
 assert(
@@ -95,12 +108,26 @@ assert(
   "Source Usage rows should use consumption share bars when no allowance windows are available"
 );
 assert(
-  Math.round(liveUsageRows.find((row) => row.sourceKind === "claude_code")?.progress.percent ?? 0) === 30,
+  Math.round(liveUsageRows.find((row) => row.sourceKind === "claude_code")?.progress.percent ?? 0) === 51,
   "Source Usage rows should still show non-zero usage share when limits are unavailable"
 );
 assert(
   sourceUsageRows(dashboardPayload.summary.by_source, []).every((row) => row.sourceKind !== "openai_api_cost"),
   "Source Usage rows should exclude API cost providers"
+);
+assert(
+  sourceUsageRows({
+    ...dashboardPayload.summary.by_source,
+    cursor: {
+      ...emptyTokenTotals(),
+      total_tokens: 1000
+    },
+    github_copilot: {
+      ...emptyTokenTotals(),
+      total_tokens: 1000
+    }
+  }, []).every((row) => row.sourceKind !== "cursor" && row.sourceKind !== "github_copilot"),
+  "Source Usage rows should exclude unsupported Cursor and GitHub Copilot totals"
 );
 const costDashboardPayload = buildDashboardSummaryFromRefresh({
   ...sourceRefreshSummarySampleCommandContract.result.storage_summary,
@@ -138,14 +165,14 @@ totalsWithConfiguredLowUsage.codex = {
   input_tokens: 10,
   total_tokens: 10
 };
-totalsWithConfiguredLowUsage.cursor = {
+totalsWithConfiguredLowUsage.gemini_cli = {
   ...emptyTokenTotals(),
   input_tokens: 100,
   total_tokens: 100
 };
 assertDeepEqual(
   sourceUsageRows(totalsWithConfiguredLowUsage, ["codex"]).map((row) => row.sourceKind),
-  ["codex", "cursor"],
+  ["codex", "gemini_cli"],
   "configured roots should be grouped above unconfigured sources with usage"
 );
 const quotaRows = sourceUsageRows(
@@ -159,7 +186,7 @@ const quotaRows = sourceUsageRows(
       ...emptyTokenTotals(),
       total_tokens: 500
     },
-    cursor: {
+    gemini_cli: {
       ...emptyTokenTotals(),
       total_tokens: 100
     }
@@ -182,8 +209,8 @@ const quotaRows = sourceUsageRows(
       remaining_amount: 15
     },
     {
-      source_kind: "cursor",
-      source_id: "cursor:test",
+      source_kind: "gemini_cli",
+      source_id: "gemini_cli:test",
       status: "unavailable",
       unit: "unknown"
     }
@@ -273,7 +300,7 @@ assertDeepEqual(
   "non-token allowance progress should use allowance units without converting tokens"
 );
 assertDeepEqual(
-  quotaRows.find((row) => row.sourceKind === "cursor")?.progress,
+  quotaRows.find((row) => row.sourceKind === "gemini_cli")?.progress,
   {
     kind: "usage_share",
     percent: 16
@@ -360,6 +387,16 @@ assert(
   dashboardQualityLabel("mock", { phase: "idle" }) === "Mock data",
   "idle mock dashboard should keep the mock quality label"
 );
+const emptyDashboardPayload = emptyDashboardSummaryPayload();
+assert(!emptyDashboardPayload.privacy.synthetic, "empty startup dashboard should not be marked as mock synthetic data");
+assert(
+  emptyDashboardPayload.refresh_state.last_status === "never_refreshed",
+  "empty startup dashboard should not pretend a refresh has succeeded"
+);
+assert(
+  dashboardQualityLabel("empty", { phase: "idle" }) === "No local aggregate",
+  "empty startup dashboard should not use the mock quality label"
+);
 assert(
   dashboardQualityLabel("mock", { phase: "loading" }) === "Loading saved aggregate",
   "startup readback loading should be visible before persisted data loads"
@@ -383,7 +420,7 @@ assertDeepEqual(
   refreshRecencyLabel(dashboardPayload.refresh_state, new Date("2026-06-14T00:10:00Z")),
   {
     label: "Fresh",
-    detail: "refreshed 10 min ago across 5 ready sources",
+    detail: "refreshed 10 min ago across 3 ready sources",
     tone: "good"
   },
   "recent successful refresh should be fresh"
@@ -392,7 +429,7 @@ assertDeepEqual(
   refreshRecencyLabel(dashboardPayload.refresh_state, new Date("2026-06-14T01:01:00Z")),
   {
     label: "Stale",
-    detail: "refreshed 1 hr ago across 5 ready sources",
+    detail: "refreshed 1 hr ago across 3 ready sources",
     tone: "warning"
   },
   "older successful refresh should be stale"

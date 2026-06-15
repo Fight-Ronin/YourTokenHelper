@@ -8,6 +8,7 @@ use std::{
     process::{Command, Stdio},
 };
 use tauri::Manager;
+use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 pub const SOURCE_REFRESH_SUMMARY_SAMPLE_COMMAND: &str = "source_refresh_summary_sample";
 pub const REFRESH_SOURCES_MANUAL_COMMAND: &str = "refresh_sources_manual";
@@ -26,6 +27,7 @@ pub const BACKEND_MANUAL_ALLOWANCE_COMMAND_MODULE: &str =
     "backend.sources.manual_allowance_command_cli";
 pub const BACKEND_API_PROVIDER_BILLING_SYNC_COMMAND_MODULE: &str =
     "backend.sources.api_provider_billing_sync_command_cli";
+pub const BACKEND_SIDECAR_NAME: &str = "yth-backend";
 pub const REFRESH_DATABASE_PATH_ENV_VAR: &str = "YTH_REFRESH_DATABASE_PATH";
 pub const OPENAI_ADMIN_KEY_ENV_VAR: &str = "OPENAI_ADMIN_KEY";
 pub const REFRESH_DATABASE_FILE_NAME: &str = "usage.sqlite";
@@ -49,11 +51,7 @@ pub struct RefreshSourcesManualArgs {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claude_code_jsonl_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cursor_jsonl_root: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub gemini_cli_jsonl_root: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub github_copilot_jsonl_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<String>,
 }
@@ -99,11 +97,7 @@ pub struct SavedSourceRoots {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claude_code_jsonl_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cursor_jsonl_root: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub gemini_cli_jsonl_root: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub github_copilot_jsonl_root: Option<String>,
     #[serde(default)]
     pub auto_refresh_enabled: bool,
     #[serde(default = "default_auto_refresh_interval_minutes")]
@@ -199,9 +193,7 @@ impl Default for SavedSourceRoots {
         Self {
             codex_jsonl_root: None,
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             auto_refresh_enabled: false,
             auto_refresh_interval_minutes: DEFAULT_AUTO_REFRESH_INTERVAL_MINUTES,
         }
@@ -288,21 +280,15 @@ pub fn api_provider_billing_sync_result_from_stdout(
 pub fn normalize_saved_source_roots(args: SavedSourceRoots) -> SavedSourceRoots {
     let codex_jsonl_root = normalize_optional_root(args.codex_jsonl_root);
     let claude_code_jsonl_root = normalize_optional_root(args.claude_code_jsonl_root);
-    let cursor_jsonl_root = normalize_optional_root(args.cursor_jsonl_root);
     let gemini_cli_jsonl_root = normalize_optional_root(args.gemini_cli_jsonl_root);
-    let github_copilot_jsonl_root = normalize_optional_root(args.github_copilot_jsonl_root);
     let has_any_root = codex_jsonl_root.is_some()
         || claude_code_jsonl_root.is_some()
-        || cursor_jsonl_root.is_some()
-        || gemini_cli_jsonl_root.is_some()
-        || github_copilot_jsonl_root.is_some();
+        || gemini_cli_jsonl_root.is_some();
 
     SavedSourceRoots {
         codex_jsonl_root,
         claude_code_jsonl_root,
-        cursor_jsonl_root,
         gemini_cli_jsonl_root,
-        github_copilot_jsonl_root,
         auto_refresh_enabled: args.auto_refresh_enabled && has_any_root,
         auto_refresh_interval_minutes: normalize_auto_refresh_interval_minutes(
             args.auto_refresh_interval_minutes,
@@ -733,12 +719,155 @@ pub fn run_gated_refresh_sources_manual_backend_process_with_database_path(
     )
 }
 
+fn run_gated_refresh_sources_manual_sidecar_process_with_database_path(
+    app: &tauri::AppHandle,
+    args: &RefreshSourcesManualArgs,
+    refresh_database_path: Option<&Path>,
+) -> Result<RefreshSourcesManualResult, String> {
+    if !has_any_refresh_source_root(args) {
+        return Ok(invalid_refresh_request(
+            "codex_jsonl_root",
+            "at least one source root is required for manual refresh",
+        ));
+    }
+
+    run_refresh_sources_manual_sidecar_process_with_database_path(app, args, refresh_database_path)
+}
+
+fn run_refresh_sources_manual_sidecar_process_with_database_path(
+    app: &tauri::AppHandle,
+    args: &RefreshSourcesManualArgs,
+    refresh_database_path: Option<&Path>,
+) -> Result<RefreshSourcesManualResult, String> {
+    let stdin = refresh_sources_manual_stdin(args)
+        .map_err(|_| "failed to serialize refresh request".to_string())?;
+    let stdout = run_backend_sidecar_process(
+        app,
+        REFRESH_SOURCES_MANUAL_COMMAND,
+        &stdin,
+        refresh_database_path,
+        None,
+    )?;
+    refresh_sources_manual_result_from_stdout(&stdout)
+        .map_err(|_| "backend refresh stdout was not a valid refresh result".to_string())
+}
+
+fn run_load_storage_summary_sidecar_process_with_database_path(
+    app: &tauri::AppHandle,
+    args: &LoadStorageSummaryArgs,
+    refresh_database_path: Option<&Path>,
+) -> Result<LoadStorageSummaryResult, String> {
+    let stdin = load_storage_summary_stdin(args)
+        .map_err(|_| "failed to serialize storage summary request".to_string())?;
+    let stdout = run_backend_sidecar_process(
+        app,
+        LOAD_STORAGE_SUMMARY_COMMAND,
+        &stdin,
+        refresh_database_path,
+        None,
+    )?;
+    load_storage_summary_result_from_stdout(&stdout)
+        .map_err(|_| "backend storage summary stdout was not a valid result".to_string())
+}
+
+fn run_save_manual_allowance_sidecar_process_with_database_path(
+    app: &tauri::AppHandle,
+    args: &ManualAllowanceArgs,
+    refresh_database_path: Option<&Path>,
+) -> Result<ManualAllowanceResult, String> {
+    let stdin = save_manual_allowance_stdin(args)
+        .map_err(|_| "failed to serialize manual allowance request".to_string())?;
+    let stdout = run_backend_sidecar_process(
+        app,
+        SAVE_MANUAL_ALLOWANCE_WINDOW_COMMAND,
+        &stdin,
+        refresh_database_path,
+        None,
+    )?;
+    save_manual_allowance_result_from_stdout(&stdout)
+        .map_err(|_| "backend manual allowance stdout was not a valid result".to_string())
+}
+
+fn run_api_provider_billing_sync_sidecar_process_with_database_path(
+    app: &tauri::AppHandle,
+    args: &SyncApiProviderBillingArgs,
+    refresh_database_path: Option<&Path>,
+    openai_admin_key: Option<&str>,
+) -> Result<ApiProviderBillingSyncResult, String> {
+    let stdin = sync_api_provider_billing_stdin(args)
+        .map_err(|_| "failed to serialize API provider billing sync request".to_string())?;
+    let stdout = run_backend_sidecar_process(
+        app,
+        SYNC_API_PROVIDER_BILLING_COMMAND,
+        &stdin,
+        refresh_database_path,
+        openai_admin_key,
+    )?;
+    api_provider_billing_sync_result_from_stdout(&stdout)
+        .map_err(|_| "backend API provider billing sync stdout was not a valid result".to_string())
+}
+
+fn run_backend_sidecar_process(
+    app: &tauri::AppHandle,
+    command_name: &str,
+    stdin: &str,
+    refresh_database_path: Option<&Path>,
+    openai_admin_key: Option<&str>,
+) -> Result<String, String> {
+    tauri::async_runtime::block_on(async {
+        let mut command = app
+            .shell()
+            .sidecar(BACKEND_SIDECAR_NAME)
+            .map_err(|_| "failed to resolve backend sidecar".to_string())?
+            .arg(command_name);
+        if let Some(path) = refresh_database_path {
+            command = command.env(REFRESH_DATABASE_PATH_ENV_VAR, path.as_os_str());
+        }
+        command = command.env(OPENAI_ADMIN_KEY_ENV_VAR, "");
+        if let Some(api_key) = openai_admin_key {
+            command = command.env(OPENAI_ADMIN_KEY_ENV_VAR, api_key);
+        }
+
+        let (mut rx, mut child) = command
+            .spawn()
+            .map_err(|_| "failed to start backend sidecar process".to_string())?;
+        child
+            .write(stdin.as_bytes())
+            .map_err(|_| "failed to write backend sidecar stdin".to_string())?;
+        drop(child);
+
+        let mut stdout = Vec::new();
+        let mut exit_code = None;
+        let mut process_error = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    stdout.extend(bytes);
+                    stdout.push(b'\n');
+                }
+                CommandEvent::Stderr(_) => {}
+                CommandEvent::Terminated(payload) => {
+                    exit_code = payload.code;
+                }
+                CommandEvent::Error(_) => {
+                    process_error = true;
+                }
+                _ => {}
+            }
+        }
+
+        if process_error || exit_code != Some(0) {
+            return Err("backend sidecar process failed".to_string());
+        }
+
+        String::from_utf8(stdout).map_err(|_| "backend sidecar stdout was not utf-8".to_string())
+    })
+}
+
 fn has_any_refresh_source_root(args: &RefreshSourcesManualArgs) -> bool {
     root_is_present(&args.codex_jsonl_root)
         || root_is_present(&args.claude_code_jsonl_root)
-        || root_is_present(&args.cursor_jsonl_root)
         || root_is_present(&args.gemini_cli_jsonl_root)
-        || root_is_present(&args.github_copilot_jsonl_root)
 }
 
 fn root_is_present(value: &Option<String>) -> bool {
@@ -787,7 +916,14 @@ fn refresh_sources_manual(
     args: RefreshSourcesManualArgs,
 ) -> Result<RefreshSourcesManualResult, String> {
     let refresh_database_path = runtime_refresh_database_path(&app)?;
-    refresh_sources_manual_command(args, &refresh_database_path)
+    if should_use_dev_python_backend() {
+        return refresh_sources_manual_command(args, &refresh_database_path);
+    }
+    run_gated_refresh_sources_manual_sidecar_process_with_database_path(
+        &app,
+        &args,
+        Some(&refresh_database_path),
+    )
 }
 
 fn refresh_sources_manual_command(
@@ -808,7 +944,14 @@ fn load_storage_summary(
     args: LoadStorageSummaryArgs,
 ) -> Result<LoadStorageSummaryResult, String> {
     let refresh_database_path = runtime_refresh_database_path(&app)?;
-    load_storage_summary_command(args, &refresh_database_path)
+    if should_use_dev_python_backend() {
+        return load_storage_summary_command(args, &refresh_database_path);
+    }
+    run_load_storage_summary_sidecar_process_with_database_path(
+        &app,
+        &args,
+        Some(&refresh_database_path),
+    )
 }
 
 fn load_storage_summary_command(
@@ -829,7 +972,14 @@ fn save_manual_allowance_window(
     args: ManualAllowanceArgs,
 ) -> Result<ManualAllowanceResult, String> {
     let refresh_database_path = runtime_refresh_database_path(&app)?;
-    save_manual_allowance_command(args, &refresh_database_path)
+    if should_use_dev_python_backend() {
+        return save_manual_allowance_command(args, &refresh_database_path);
+    }
+    run_save_manual_allowance_sidecar_process_with_database_path(
+        &app,
+        &args,
+        Some(&refresh_database_path),
+    )
 }
 
 fn save_manual_allowance_command(
@@ -899,7 +1049,7 @@ fn sync_api_provider_billing(
 ) -> Result<ApiProviderBillingSyncResult, String> {
     let refresh_database_path = runtime_refresh_database_path(&app)?;
     let credential_path = runtime_api_provider_credentials_path(&app)?;
-    sync_api_provider_billing_command(args, &refresh_database_path, &credential_path)
+    sync_api_provider_billing_runtime_command(&app, args, &refresh_database_path, &credential_path)
 }
 
 fn sync_api_provider_billing_command(
@@ -941,6 +1091,56 @@ fn sync_api_provider_billing_command(
         Some(refresh_database_path),
         Some(&api_key),
     )
+}
+
+fn sync_api_provider_billing_runtime_command(
+    app: &tauri::AppHandle,
+    args: SyncApiProviderBillingArgs,
+    refresh_database_path: &Path,
+    credential_path: &Path,
+) -> Result<ApiProviderBillingSyncResult, String> {
+    if should_use_dev_python_backend() {
+        return sync_api_provider_billing_command(args, refresh_database_path, credential_path);
+    }
+    if let Err(message) = validate_api_provider_id(&args.provider_id) {
+        return Ok(api_provider_billing_sync_error(
+            "invalid_api_provider_billing_sync_request",
+            "provider_id",
+            &message,
+        ));
+    }
+    if !is_verified_api_cost_provider(&args.provider_id) {
+        return Ok(api_provider_billing_sync_error(
+            "api_provider_billing_sync_unavailable",
+            "provider_id",
+            "Provider billing adapter has not been verified",
+        ));
+    }
+
+    let api_key = match load_api_provider_credential_from_path(credential_path, &args.provider_id)?
+    {
+        Some(value) => value,
+        None => {
+            return Ok(api_provider_billing_sync_error(
+                "api_provider_billing_sync_unavailable",
+                "credential",
+                "OpenAI API provider credential is not configured",
+            ));
+        }
+    };
+
+    run_api_provider_billing_sync_sidecar_process_with_database_path(
+        app,
+        &args,
+        Some(refresh_database_path),
+        Some(&api_key),
+    )
+}
+
+fn should_use_dev_python_backend() -> bool {
+    cfg!(debug_assertions)
+        || env::var_os("YTH_PYTHON").is_some()
+        || env::var_os("YTH_WORKSPACE_ROOT").is_some()
 }
 
 fn runtime_python_executable() -> PathBuf {
@@ -1188,6 +1388,7 @@ mod windows_dpapi {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             source_refresh_summary_sample,
             refresh_sources_manual,
@@ -1387,9 +1588,7 @@ mod tests {
         assert_eq!(serialized["started_at"], "2026-06-14T00:00:00Z");
         assert!(serialized.get("codex_jsonl_root").is_none());
         assert!(serialized.get("claude_code_jsonl_root").is_none());
-        assert!(serialized.get("cursor_jsonl_root").is_none());
         assert!(serialized.get("gemini_cli_jsonl_root").is_none());
-        assert!(serialized.get("github_copilot_jsonl_root").is_none());
     }
 
     #[test]
@@ -1398,9 +1597,7 @@ mod tests {
             "end_day_utc": "2026-06-14",
             "codex_jsonl_root": "synthetic-codex-root",
             "claude_code_jsonl_root": "synthetic-claude-root",
-            "cursor_jsonl_root": "synthetic-cursor-root",
-            "gemini_cli_jsonl_root": "synthetic-gemini-root",
-            "github_copilot_jsonl_root": "synthetic-copilot-root"
+            "gemini_cli_jsonl_root": "synthetic-gemini-root"
         }))
         .unwrap();
         let text = serde_json::to_string(&args).unwrap();
@@ -1414,23 +1611,28 @@ mod tests {
             Some("synthetic-claude-root")
         );
         assert_eq!(
-            args.cursor_jsonl_root.as_deref(),
-            Some("synthetic-cursor-root")
-        );
-        assert_eq!(
             args.gemini_cli_jsonl_root.as_deref(),
             Some("synthetic-gemini-root")
         );
-        assert_eq!(
-            args.github_copilot_jsonl_root.as_deref(),
-            Some("synthetic-copilot-root")
-        );
         assert!(text.contains("codex_jsonl_root"));
         assert!(text.contains("claude_code_jsonl_root"));
-        assert!(text.contains("cursor_jsonl_root"));
         assert!(text.contains("gemini_cli_jsonl_root"));
-        assert!(text.contains("github_copilot_jsonl_root"));
         assert!(!text.contains("auto_discover"));
+    }
+
+    #[test]
+    fn refresh_sources_manual_args_reject_unsupported_source_roots() {
+        let cursor_result = serde_json::from_value::<RefreshSourcesManualArgs>(json!({
+            "end_day_utc": "2026-06-14",
+            "cursor_jsonl_root": "synthetic-cursor-root"
+        }));
+        let copilot_result = serde_json::from_value::<RefreshSourcesManualArgs>(json!({
+            "end_day_utc": "2026-06-14",
+            "github_copilot_jsonl_root": "synthetic-copilot-root"
+        }));
+
+        assert!(cursor_result.is_err());
+        assert!(copilot_result.is_err());
     }
 
     #[test]
@@ -1439,20 +1641,16 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some("synthetic-codex-root".to_string()),
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: Some("synthetic-cursor-root".to_string()),
-            gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
+            gemini_cli_jsonl_root: Some("synthetic-gemini-root".to_string()),
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
         let text = refresh_sources_manual_stdin(&args).unwrap();
 
         assert!(text.contains("\"end_day_utc\":\"2026-06-14\""));
         assert!(text.contains("\"codex_jsonl_root\":\"synthetic-codex-root\""));
-        assert!(text.contains("\"cursor_jsonl_root\":\"synthetic-cursor-root\""));
+        assert!(text.contains("\"gemini_cli_jsonl_root\":\"synthetic-gemini-root\""));
         assert!(text.contains("\"started_at\":\"2026-06-14T00:00:00Z\""));
         assert!(!text.contains("claude_code_jsonl_root"));
-        assert!(!text.contains("gemini_cli_jsonl_root"));
-        assert!(!text.contains("github_copilot_jsonl_root"));
         assert!(!text.contains("auto_discover"));
         assert!(!text.contains("source_refresh_summary_sample"));
     }
@@ -1835,9 +2033,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -1878,9 +2074,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -1900,9 +2094,7 @@ mod tests {
                 end_day_utc: "2026-06-14".to_string(),
                 codex_jsonl_root: None,
                 claude_code_jsonl_root: None,
-                cursor_jsonl_root: None,
                 gemini_cli_jsonl_root: None,
-                github_copilot_jsonl_root: None,
                 started_at: Some("2026-06-14T00:10:00Z".to_string()),
             },
             Some(&database_path),
@@ -2074,9 +2266,7 @@ mod tests {
                 end_day_utc: "2026-06-14".to_string(),
                 codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
                 claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
-                cursor_jsonl_root: None,
                 gemini_cli_jsonl_root: None,
-                github_copilot_jsonl_root: None,
                 started_at: Some("2026-06-14T00:00:00Z".to_string()),
             },
             &database_path,
@@ -2156,9 +2346,7 @@ mod tests {
         let saved = normalize_saved_source_roots(SavedSourceRoots {
             codex_jsonl_root: Some(" synthetic-codex-root ".to_string()),
             claude_code_jsonl_root: Some(" synthetic-claude-root ".to_string()),
-            cursor_jsonl_root: Some(" synthetic-cursor-root ".to_string()),
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             auto_refresh_enabled: true,
             auto_refresh_interval_minutes: 1,
         });
@@ -2171,10 +2359,6 @@ mod tests {
             saved.claude_code_jsonl_root.as_deref(),
             Some("synthetic-claude-root")
         );
-        assert_eq!(
-            saved.cursor_jsonl_root.as_deref(),
-            Some("synthetic-cursor-root")
-        );
         assert!(saved.auto_refresh_enabled);
         assert_eq!(
             saved.auto_refresh_interval_minutes,
@@ -2184,9 +2368,7 @@ mod tests {
         let missing_claude = normalize_saved_source_roots(SavedSourceRoots {
             codex_jsonl_root: Some("synthetic-codex-root".to_string()),
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             auto_refresh_enabled: true,
             auto_refresh_interval_minutes: 1441,
         });
@@ -2203,9 +2385,7 @@ mod tests {
             &SavedSourceRoots {
                 codex_jsonl_root: Some("synthetic-codex-root".to_string()),
                 claude_code_jsonl_root: Some("synthetic-claude-root".to_string()),
-                cursor_jsonl_root: Some("synthetic-cursor-root".to_string()),
                 gemini_cli_jsonl_root: None,
-                github_copilot_jsonl_root: None,
                 auto_refresh_enabled: true,
                 auto_refresh_interval_minutes: 15,
             },
@@ -2496,9 +2676,7 @@ mod tests {
             end_day_utc: "2026-6-14".to_string(),
             codex_jsonl_root: Some("C:/Users/example/secret/codex".to_string()),
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -2532,9 +2710,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: None,
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -2570,9 +2746,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: None,
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -2606,9 +2780,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: None,
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             started_at: None,
         };
 
@@ -2641,9 +2813,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
-            cursor_jsonl_root: Some(path_text(&fixture_root.join("cursor"))),
             gemini_cli_jsonl_root: Some(path_text(&fixture_root.join("gemini_cli"))),
-            github_copilot_jsonl_root: Some(path_text(&fixture_root.join("github_copilot"))),
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -2654,7 +2824,7 @@ mod tests {
             RefreshSourcesManualResult::Success(payload) => {
                 assert_eq!(
                     payload["storage_summary"]["summary"]["totals"]["total_tokens"],
-                    17040
+                    9820
                 );
             }
             RefreshSourcesManualResult::Error(_) => {
@@ -2674,9 +2844,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: None,
-            cursor_jsonl_root: None,
             gemini_cli_jsonl_root: None,
-            github_copilot_jsonl_root: None,
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -2710,9 +2878,7 @@ mod tests {
             end_day_utc: "2026-06-14".to_string(),
             codex_jsonl_root: Some(path_text(&fixture_root.join("codex"))),
             claude_code_jsonl_root: Some(path_text(&fixture_root.join("claude_code"))),
-            cursor_jsonl_root: Some(path_text(&fixture_root.join("cursor"))),
             gemini_cli_jsonl_root: Some(path_text(&fixture_root.join("gemini_cli"))),
-            github_copilot_jsonl_root: Some(path_text(&fixture_root.join("github_copilot"))),
             started_at: Some("2026-06-14T00:00:00Z".to_string()),
         };
 
@@ -2727,7 +2893,7 @@ mod tests {
             RefreshSourcesManualResult::Success(payload) => {
                 assert_eq!(
                     payload["storage_summary"]["summary"]["totals"]["total_tokens"],
-                    17040
+                    9820
                 );
             }
             RefreshSourcesManualResult::Error(_) => {

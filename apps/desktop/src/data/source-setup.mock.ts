@@ -2,14 +2,12 @@ import type { RefreshSourcesManualDraft } from "../commands/refreshSourcesManual
 import type { ApiCostSourceKind, SourceKind } from "../types.js";
 
 export type LocalSetupSourceKind = Exclude<SourceKind, ApiCostSourceKind>;
-export type ExplicitRootSourceKind = LocalSetupSourceKind;
+export type ExplicitRootSourceKind = Exclude<LocalSetupSourceKind, "cursor" | "github_copilot">;
 export type ExplicitRootSelectionDraft = Pick<
   RefreshSourcesManualDraft,
   | "codexJsonlRoot"
   | "claudeCodeJsonlRoot"
-  | "cursorJsonlRoot"
   | "geminiCliJsonlRoot"
-  | "githubCopilotJsonlRoot"
 >;
 export type ExplicitRootSetupAction =
   | {
@@ -31,32 +29,25 @@ export type ExplicitRootMockRow = {
   detail:
     | "Hidden root selected"
     | "Explicit root required"
-    | "Usage export root"
-    | "Telemetry/export root"
-    | "Official report root";
+    | "Telemetry/export root";
   nextStep:
     | "Choose explicit root"
-    | "Choose usage export"
     | "Choose telemetry export"
-    | "Choose official report"
     | "Ready for refresh";
-  pathPolicy: "no_path_stored" | "official_report_import";
+  pathPolicy: "no_path_stored";
   rootReadiness: "missing_explicit_root" | "selected_explicit_root";
   picker: ExplicitRootSourceKind;
   pickerAction?: "Change" | "Choose";
 };
 
 export const pathPolicyLabels: Record<ExplicitRootMockRow["pathPolicy"], string> = {
-  no_path_stored: "Path hidden",
-  official_report_import: "Official report import"
+  no_path_stored: "Path hidden"
 };
 
 export const explicitRootSourceLabels: Record<ExplicitRootSourceKind, string> = {
   codex: "Codex",
   claude_code: "Claude Code",
-  cursor: "Cursor",
-  gemini_cli: "Gemini CLI",
-  github_copilot: "GitHub Copilot"
+  gemini_cli: "Gemini CLI"
 };
 
 export type ManualRefreshUiState = {
@@ -134,17 +125,6 @@ export const explicitRootMockRows: readonly ExplicitRootMockRow[] = [
     pickerAction: "Choose"
   },
   {
-    sourceKind: "cursor",
-    state: "Not selected",
-    displayValue: "No root selected",
-    detail: "Usage export root",
-    nextStep: "Choose usage export",
-    pathPolicy: "no_path_stored",
-    rootReadiness: "missing_explicit_root",
-    picker: "cursor",
-    pickerAction: "Choose"
-  },
-  {
     sourceKind: "gemini_cli",
     state: "Not selected",
     displayValue: "No root selected",
@@ -153,17 +133,6 @@ export const explicitRootMockRows: readonly ExplicitRootMockRow[] = [
     pathPolicy: "no_path_stored",
     rootReadiness: "missing_explicit_root",
     picker: "gemini_cli",
-    pickerAction: "Choose"
-  },
-  {
-    sourceKind: "github_copilot",
-    state: "Not selected",
-    displayValue: "No root selected",
-    detail: "Official report root",
-    nextStep: "Choose official report",
-    pathPolicy: "official_report_import",
-    rootReadiness: "missing_explicit_root",
-    picker: "github_copilot",
     pickerAction: "Choose"
   }
 ];
@@ -284,9 +253,7 @@ export function buildManualRefreshDraftFromHiddenRoots(
       endDayUtc: draft.endDayUtc.trim(),
       codexJsonlRoot: draft.codexJsonlRoot?.trim(),
       claudeCodeJsonlRoot: draft.claudeCodeJsonlRoot?.trim(),
-      cursorJsonlRoot: draft.cursorJsonlRoot?.trim(),
       geminiCliJsonlRoot: draft.geminiCliJsonlRoot?.trim(),
-      githubCopilotJsonlRoot: draft.githubCopilotJsonlRoot?.trim(),
       startedAt: draft.startedAt?.trim()
     }
   };
@@ -303,11 +270,5 @@ function rootFieldForSource(sourceKind: ExplicitRootSourceKind): keyof ExplicitR
   if (sourceKind === "claude_code") {
     return "claudeCodeJsonlRoot";
   }
-  if (sourceKind === "cursor") {
-    return "cursorJsonlRoot";
-  }
-  if (sourceKind === "gemini_cli") {
-    return "geminiCliJsonlRoot";
-  }
-  return "githubCopilotJsonlRoot";
+  return "geminiCliJsonlRoot";
 }

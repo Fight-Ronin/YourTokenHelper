@@ -8,8 +8,9 @@
     "typecheck": "tsc",
     "test:commands": "tsc -p tsconfig.command-tests.json && node .tmp-command-tests/tests/refreshSourcesManualArgs.test.js && node .tmp-command-tests/tests/sourceRefreshSummary.test.js && node .tmp-command-tests/tests/refreshSourcesManualInvoker.test.js && node .tmp-command-tests/tests/manualAllowance.test.js && node .tmp-command-tests/tests/sourceRootPreferences.test.js && node .tmp-command-tests/tests/sourceSetupMock.test.js && node .tmp-command-tests/tests/apiProviderCredentials.test.js && node .tmp-command-tests/tests/apiProviderBillingSync.test.js && node .tmp-command-tests/tests/apiCostProviders.test.js && node .tmp-command-tests/tests/dashboardSummary.test.js",
     "build": "tsc && vite build",
+    "build:backend-sidecar": "node scripts/build-backend-sidecar.mjs",
     "preview": "vite preview",
-    "tauri": "cargo tauri"
+    "tauri": "set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%&& tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",

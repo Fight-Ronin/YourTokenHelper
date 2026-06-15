@@ -28,6 +28,12 @@ Windows desktop prerequisites are installed on this machine for future Tauri wor
 - stable MSVC Rust toolchain via rustup;
 - Microsoft C++ Build Tools;
 - Microsoft Edge WebView2 Runtime;
-- Cargo Tauri CLI.
+- Cargo, used by the local Tauri CLI.
 
-After opening a new terminal, `cargo tauri --version` should report the installed Tauri CLI. In the current Codex shell, use `%USERPROFILE%\.cargo\bin` explicitly if Cargo is not yet on `PATH`.
+Use the desktop npm script as the standard entrypoint; it temporarily prepends
+`%USERPROFILE%\.cargo\bin` before calling the local Tauri CLI:
+
+```powershell
+cd apps\desktop
+conda run --no-capture-output -n tokenviz npm run tauri -- dev
+```

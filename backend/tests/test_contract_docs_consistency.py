@@ -354,7 +354,7 @@ def test_desktop_command_contract_matches_primary_refresh_request_shape():
     assert "payload.info.last_token_usage" in readme_text
     assert "message.usage" in readme_text
     assert "Automation must request explicit approval before running this GUI smoke" in readme_text
-    assert "Updated 17,040 aggregate tokens" in readme_text
+    assert "Updated 9,820 aggregate tokens" in readme_text
     assert "load_storage_summary" in readme_text
     assert "invokes only `refresh_sources_manual`" in pr5_text
     assert "never falls back to `source_refresh_summary_sample`" in pr5_text
@@ -555,7 +555,7 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "ManualRefreshRunState" in setup_text
     assert "manualRefreshStatusLabel(true, { phase: \"running\" })" in DESKTOP_SOURCE_SETUP_MOCK_TEST.read_text(encoding="utf-8")
     assert "Updated 7,570 aggregate tokens" in DESKTOP_SOURCE_SETUP_MOCK_TEST.read_text(encoding="utf-8")
-    assert "storage_summary.summary.totals.total_tokens" in app_text
+    assert "manualRefreshSuccessMessage(payload.summary.totals.total_tokens)" in app_text
     assert "latest manual refresh aggregate" in app_text
     assert "refresh_sources_manual" in setup_text
     assert "Partial mock" not in setup_text
@@ -569,9 +569,9 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "Explicit Roots" in app_text
     assert 'picker: "codex"' in setup_text
     assert 'picker: "claude_code"' in setup_text
-    assert 'picker: "cursor"' in setup_text
     assert 'picker: "gemini_cli"' in setup_text
-    assert 'picker: "github_copilot"' in setup_text
+    assert 'picker: "cursor"' not in setup_text
+    assert 'picker: "github_copilot"' not in setup_text
     assert "Selected (mock)" in setup_text
     assert "Selected, path hidden" in setup_text
     assert "Hidden root selected" in setup_text
@@ -585,20 +585,20 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert 'pickerAction: "Choose"' in setup_text
     assert 'pathPolicy: "no_path_stored"' in setup_text
     assert 'pathPolicy: "no_local_parser"' not in setup_text
-    assert 'pathPolicy: "official_report_import"' in setup_text
+    assert 'pathPolicy: "official_report_import"' not in setup_text
     assert "Path hidden" in setup_text
     assert "No local parser" not in setup_text
-    assert "Official report import" in setup_text
+    assert "Official report import" not in setup_text
     assert "Choose explicit root" in setup_text
-    assert "Choose usage export" in setup_text
+    assert "Choose usage export" not in setup_text
     assert "Choose telemetry export" in setup_text
-    assert "Choose official report" in setup_text
+    assert "Choose official report" not in setup_text
     assert "Ready for refresh" in setup_text
     assert "label={pathPolicyLabels[row.pathPolicy]}" in app_text
     assert "onRootChange(row.sourceKind, event.currentTarget.value)" in app_text
     assert "onClearRoot(row.sourceKind)" in app_text
     assert "Status only" not in setup_text
-    assert "Official report root" in setup_text
+    assert "Official report root" not in setup_text
     assert "headerRefreshButtonLabel" in app_text
     assert "headerRefreshButtonTitle" in app_text
     assert "canRunHeaderRefresh" in app_text
@@ -617,10 +617,10 @@ def test_desktop_mock_shell_keeps_sync_affordances_disabled():
     assert "production command client" in readme_text
     assert "names `refresh_sources_manual`" in readme_text
     assert "`Path hidden`" in readme_text
-    assert "`Official report import`" in readme_text
+    assert "`Official report import`" not in readme_text
     assert "typed `nextStep` hints" in readme_text
     assert "telemetry/export import" in readme_text
-    assert "official report import" in readme_text
+    assert "official report import" not in readme_text
     assert "any selected explicit import root plus Tauri wiring" in readme_text
     assert "tested path-free needs label" in readme_text
     assert "root readiness" in readme_text

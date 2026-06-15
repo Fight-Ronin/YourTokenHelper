@@ -61,9 +61,7 @@ const UTC_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const sourceKinds = new Set<SourceKind>([
   "codex",
   "claude_code",
-  "cursor",
   "gemini_cli",
-  "github_copilot",
   "openai_api_cost",
   "claude_api_cost",
   "gemini_api_cost",

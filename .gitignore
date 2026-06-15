@@ -8,3 +8,8 @@
 __pycache__/
 *.pyc
 
+apps/desktop/src-tauri/binaries/yth-backend-*
+apps/desktop/src-tauri/target/pyinstaller-build/
+apps/desktop/src-tauri/target/pyinstaller-spec/
+
+.vscode/

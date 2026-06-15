@@ -27,21 +27,19 @@ assert(
   "disabled refresh title should point to missing source root setup"
 );
 
-assert(explicitRootMockRows.length === 5, "all primary local setup sources should be represented");
+assert(explicitRootMockRows.length === 3, "supported local setup sources should be represented");
 assertDeepEqual(
   explicitRootMockRows.map((row) => row.sourceKind),
-  ["codex", "claude_code", "cursor", "gemini_cli", "github_copilot"]
+  ["codex", "claude_code", "gemini_cli"]
 );
 assertDeepEqual(
   explicitRootMockRows.filter((row) => row.picker).map((row) => row.sourceKind),
-  ["codex", "claude_code", "cursor", "gemini_cli", "github_copilot"]
+  ["codex", "claude_code", "gemini_cli"]
 );
 
 const codex = explicitRootMockRows.find((row) => row.sourceKind === "codex");
 const claudeCode = explicitRootMockRows.find((row) => row.sourceKind === "claude_code");
-const cursor = explicitRootMockRows.find((row) => row.sourceKind === "cursor");
 const geminiCli = explicitRootMockRows.find((row) => row.sourceKind === "gemini_cli");
-const githubCopilot = explicitRootMockRows.find((row) => row.sourceKind === "github_copilot");
 
 assert(codex?.state === "Not selected", "Codex should start without an explicit root");
 assert(codex.displayValue === "No root selected", "Codex should not display a path placeholder");
@@ -56,10 +54,6 @@ assert(
   "Claude Code should still be missing an explicit root"
 );
 assert(claudeCode.nextStep === "Choose explicit root", "Claude Code should guide explicit root setup");
-assert(cursor?.pathPolicy === "no_path_stored", "Cursor import root should stay hidden");
-assert(cursor.displayValue === "No root selected", "Cursor should support explicit usage import setup");
-assert(cursor.detail === "Usage export root", "Cursor should identify usage export import");
-assert(cursor.nextStep === "Choose usage export", "Cursor should guide usage export import");
 assert(geminiCli?.pathPolicy === "no_path_stored", "Gemini CLI import root should stay hidden");
 assert(geminiCli.displayValue === "No root selected", "Gemini CLI should support telemetry import setup");
 assert(geminiCli.detail === "Telemetry/export root", "Gemini CLI should identify telemetry import");
@@ -67,14 +61,7 @@ assert(
   geminiCli.nextStep === "Choose telemetry export",
   "Gemini CLI should require telemetry/export setup"
 );
-assert(
-  githubCopilot?.pathPolicy === "official_report_import",
-  "GitHub Copilot should guide official report import"
-);
-assert(githubCopilot.displayValue === "No root selected", "Copilot should support report import setup");
-assert(githubCopilot.nextStep === "Choose official report", "Copilot should guide official report usage");
 assert(pathPolicyLabels.no_path_stored === "Path hidden", "explicit roots should keep root values hidden");
-assert(pathPolicyLabels.official_report_import === "Official report import", "Copilot should name report import");
 
 const readiness = getManualRefreshReadiness();
 assert(!readiness.canRun, "mock readiness must not enable manual refresh");
@@ -176,12 +163,12 @@ const actionDraft = applyExplicitRootSetupAction(
     applyExplicitRootSetupAction({}, { type: "select_root", sourceKind: "codex", root: " synthetic/codex " }),
     { type: "select_root", sourceKind: "claude_code", root: " synthetic/claude-code " }
   ),
-  { type: "select_root", sourceKind: "cursor", root: " synthetic/cursor " }
+  { type: "select_root", sourceKind: "gemini_cli", root: " synthetic/gemini " }
 );
 assertDeepEqual(actionDraft, {
   codexJsonlRoot: "synthetic/codex",
   claudeCodeJsonlRoot: "synthetic/claude-code",
-  cursorJsonlRoot: "synthetic/cursor"
+  geminiCliJsonlRoot: "synthetic/gemini"
 });
 assert(
   !JSON.stringify(buildExplicitRootSetupRows(actionDraft)).includes("synthetic/codex"),
@@ -192,8 +179,8 @@ assert(
   "action-selected Claude Code root must not serialize into setup rows"
 );
 assert(
-  !JSON.stringify(buildExplicitRootSetupRows(actionDraft)).includes("synthetic/cursor"),
-  "action-selected Cursor root must not serialize into setup rows"
+  !JSON.stringify(buildExplicitRootSetupRows(actionDraft)).includes("synthetic/gemini"),
+  "action-selected Gemini CLI root must not serialize into setup rows"
 );
 
 const clearedActionDraft = applyExplicitRootSetupAction(actionDraft, {
@@ -202,7 +189,7 @@ const clearedActionDraft = applyExplicitRootSetupAction(actionDraft, {
 });
 assertDeepEqual(clearedActionDraft, {
   claudeCodeJsonlRoot: "synthetic/claude-code",
-  cursorJsonlRoot: "synthetic/cursor"
+  geminiCliJsonlRoot: "synthetic/gemini"
 });
 
 const hiddenRootRefresh = buildManualRefreshDraftFromHiddenRoots(
@@ -210,9 +197,7 @@ const hiddenRootRefresh = buildManualRefreshDraftFromHiddenRoots(
     endDayUtc: " 2026-06-14 ",
     codexJsonlRoot: " synthetic/codex ",
     claudeCodeJsonlRoot: " synthetic/claude-code ",
-    cursorJsonlRoot: " synthetic/cursor ",
     geminiCliJsonlRoot: " synthetic/gemini ",
-    githubCopilotJsonlRoot: " synthetic/copilot ",
     startedAt: " 2026-06-14T00:00:00Z "
   },
   { hasTauriWiring: true }
@@ -223,17 +208,13 @@ assertDeepEqual(hiddenRootRefresh.draft, {
   endDayUtc: "2026-06-14",
   codexJsonlRoot: "synthetic/codex",
   claudeCodeJsonlRoot: "synthetic/claude-code",
-  cursorJsonlRoot: "synthetic/cursor",
   geminiCliJsonlRoot: "synthetic/gemini",
-  githubCopilotJsonlRoot: "synthetic/copilot",
   startedAt: "2026-06-14T00:00:00Z"
 });
 assertDeepEqual(hiddenRootRefresh.readiness.configuredExplicitRoots, [
   "codex",
   "claude_code",
-  "cursor",
-  "gemini_cli",
-  "github_copilot"
+  "gemini_cli"
 ]);
 assert(
   !JSON.stringify(hiddenRootRefresh.rows).includes("synthetic/codex"),
@@ -243,9 +224,7 @@ assert(
   !JSON.stringify(hiddenRootRefresh.rows).includes("synthetic/claude-code"),
   "hidden root rows must not serialize Claude Code root values"
 );
-assert(!JSON.stringify(hiddenRootRefresh.rows).includes("synthetic/cursor"), "hidden rows must not serialize Cursor roots");
 assert(!JSON.stringify(hiddenRootRefresh.rows).includes("synthetic/gemini"), "hidden rows must not serialize Gemini roots");
-assert(!JSON.stringify(hiddenRootRefresh.rows).includes("synthetic/copilot"), "hidden rows must not serialize Copilot roots");
 
 const unwiredHiddenRootRefresh = buildManualRefreshDraftFromHiddenRoots({
   endDayUtc: "2026-06-14",

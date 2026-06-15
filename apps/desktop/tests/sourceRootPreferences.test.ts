@@ -33,9 +33,7 @@ assert(autoRefreshStatusLabel(defaults, false) === "Needs saved roots", "auto re
 const preferences = sourceRootPreferencesFromSaved({
   codex_jsonl_root: " synthetic/codex ",
   claude_code_jsonl_root: " synthetic/claude-code ",
-  cursor_jsonl_root: " synthetic/cursor ",
   gemini_cli_jsonl_root: " synthetic/gemini ",
-  github_copilot_jsonl_root: " synthetic/copilot ",
   auto_refresh_enabled: true,
   auto_refresh_interval_minutes: 30
 });
@@ -44,9 +42,7 @@ assertDeepEqual(preferences, {
   rootDraft: {
     codexJsonlRoot: "synthetic/codex",
     claudeCodeJsonlRoot: "synthetic/claude-code",
-    cursorJsonlRoot: "synthetic/cursor",
-    geminiCliJsonlRoot: "synthetic/gemini",
-    githubCopilotJsonlRoot: "synthetic/copilot"
+    geminiCliJsonlRoot: "synthetic/gemini"
   },
   hasSavedRoots: true,
   autoRefreshEnabled: true,
@@ -136,9 +132,7 @@ const savedPayload = savedSourceRootsPayloadFromPreferences(preferences);
 assertDeepEqual(savedPayload, {
   codex_jsonl_root: "synthetic/codex",
   claude_code_jsonl_root: "synthetic/claude-code",
-  cursor_jsonl_root: "synthetic/cursor",
   gemini_cli_jsonl_root: "synthetic/gemini",
-  github_copilot_jsonl_root: "synthetic/copilot",
   auto_refresh_enabled: true,
   auto_refresh_interval_minutes: 30
 });

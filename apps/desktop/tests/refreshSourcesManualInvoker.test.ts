@@ -23,7 +23,7 @@ const invoked = await invokeRefreshSourcesManualWith(fakeInvoke, {
   endDayUtc: "2026-06-14",
   codexJsonlRoot: " synthetic/codex ",
   claudeCodeJsonlRoot: " synthetic/claude-code ",
-  cursorJsonlRoot: " synthetic/cursor "
+  geminiCliJsonlRoot: " synthetic/gemini "
 });
 
 assert(invoked.ok, "expected explicit roots to invoke refresh command");
@@ -39,18 +39,18 @@ assertDeepEqual(calls[0].args, {
     end_day_utc: "2026-06-14",
     codex_jsonl_root: "synthetic/codex",
     claude_code_jsonl_root: "synthetic/claude-code",
-    cursor_jsonl_root: "synthetic/cursor"
+    gemini_cli_jsonl_root: "synthetic/gemini"
   }
 });
 
 const refreshedDashboard = buildDashboardSummaryFromRefresh(invoked.result.storage_summary);
 assert(
-  refreshedDashboard.summary.totals.total_tokens === 17040,
+  refreshedDashboard.summary.totals.total_tokens === 9820,
   "gated refresh success should normalize into the dashboard aggregate total"
 );
 assert(
   manualRefreshSuccessMessage(refreshedDashboard.summary.totals.total_tokens) ===
-    "Updated 17,040 aggregate tokens",
+    "Updated 9,820 aggregate tokens",
   "gated refresh success should produce the path-free success message"
 );
 assert(

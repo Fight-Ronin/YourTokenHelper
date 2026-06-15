@@ -2,27 +2,25 @@
 
 Tauri v2 + React + TypeScript desktop shell for YourTokenHelper.
 
-PR3 scope:
+Current desktop scope:
 
-- render Daily and rolling 7-day Weekly from static mock aggregate data;
+- render Daily and rolling 7-day Weekly from saved or refreshed local aggregate data;
 - expose Sources, API Costs, and Settings routes;
 - keep API cost secondary;
-- do not connect to real local parsers, SQLite, or live APIs.
+- start from an empty local aggregate until saved storage or a manual refresh is available.
 
 The header `Refresh` button is a shortcut for the same gated manual refresh
 path used by the Sources view. It stays disabled until at least one source root
 is present, saved, and the refresh command is not already running; it
 does not infer local paths or use a separate sync path.
-The Sources view shows explicit-root setup rows for Codex, Claude Code, Cursor,
-Gemini CLI, and GitHub Copilot. The visible `displayValue` is a safe label such
+The Sources view shows explicit-root setup rows for Codex, Claude Code, and
+Gemini CLI. The visible `displayValue` is a safe label such
 as `Selected, path hidden` or `No root selected`; neither state displays a real
 root path.
 Those setup rows live in the typed `explicitRootMockRows` fixture. Rows display
-typed `pathPolicyLabels`, including `Path hidden` for local/import roots and
-`Official report import` for the Copilot report import path.
+typed `pathPolicyLabels`, including `Path hidden` for local/import roots.
 Rows also include typed `nextStep` hints: Codex and Claude Code point to
-explicit-root setup, Cursor points to usage export import, Gemini CLI points to
-telemetry/export import, and GitHub Copilot points to official report import
+explicit-root setup, and Gemini CLI points to telemetry/export import
 without storing local paths in UI payloads.
 The fixture also exposes `getManualRefreshReadiness`; it treats the empty-root
 default as blocked and any selected explicit import root plus Tauri wiring as
@@ -42,14 +40,14 @@ least one explicit root and bridge wiring are ready; otherwise the draft stays
 The Sources view consumes that hidden-root boundary with empty roots today, so
 it renders path-free setup rows and missing-root readiness while keeping the
 refresh action disabled.
-The explicit-root rows now use masked manual inputs for all five primary sources
+The explicit-root rows now use masked manual inputs for the supported local sources
 instead of an OS picker. Typed values update only the hidden command draft; the
 visible setup rows continue to show path-free labels.
 This keeps browser autocomplete and spellcheck disabled.
 The Sources view also exposes explicit `Save roots` and `Forget` controls.
 Saving writes hidden source roots to a Tauri app-data config file only after
-user action; the same config can hold Codex, Claude Code, Cursor, Gemini CLI,
-and GitHub Copilot import roots. The UI continues to show path-free labels and
+user action; the same config can hold Codex, Claude Code, and Gemini CLI
+import roots. The UI continues to show path-free labels and
 command responses still do not echo root values. `Forget` clears that local
 config. Auto refresh stays disabled until at least one root is ready and saved, then
 uses the saved roots while the app is open at a fixed 15-minute interval.
@@ -69,7 +67,9 @@ It displays the hidden-root boundary's tested path-free needs label, dynamic
 root readiness, and tested bridge state, but the empty-root default still does
 not invoke refresh or read local source paths.
 
-The mock UI reads `src/data/mock-v1-summary.json`, copied from the backend-owned contract fixture at `../../backend/fixtures/mock_v1_summary.json`.
+The UI starts from an empty local aggregate and then promotes saved storage,
+manual refresh, manual allowance, or API billing sync results into Daily and
+Weekly. The mock fixture remains only as a contract fixture for tests.
 
 `src/types.ts` also mirrors the PR5 refresh-summary command payload for Tauri wiring. The current desktop shell keeps that command behind explicit-root readiness and does not read real source data by default.
 
@@ -132,12 +132,12 @@ read-only `load_storage_summary` command and promotes an existing persisted
 aggregate into the Daily and Weekly dashboard state. The pure
 `src/commands/loadStorageSummaryStartup.ts` helper keeps missing storage,
 browser mode, or other invoke failures as unavailable states. Those paths leave
-the mock summary visible without creating an empty database, running refresh,
-showing zero usage, or reflecting local paths.
+the empty local aggregate visible without creating an empty database, running
+refresh, or reflecting local paths.
 The Sources view renders the same startup readback state in a `Saved Aggregate`
 panel. It labels readback as checking, loaded, or unavailable; the dashboard
-row shows either saved aggregate or mock fallback; and the refresh row stays
-manual-or-auto.
+row shows saved aggregate, no local aggregate, or mock fallback; and the refresh
+row stays manual-or-auto.
 
 It also exposes `buildRefreshSourcesManualArgs`, a pure helper that converts
 camelCase UI drafts into the snake_case manual refresh args. Blank optional root
@@ -167,20 +167,18 @@ user directories:
 
 - Codex root: `experiments/fixtures/local_sources/codex`
 - Claude Code root: `experiments/fixtures/local_sources/claude_code`
-- Cursor root: `experiments/fixtures/local_sources/cursor`
 - Gemini CLI root: `experiments/fixtures/local_sources/gemini_cli`
-- GitHub Copilot root: `experiments/fixtures/local_sources/github_copilot`
 
 Start the shell with:
 
 ```powershell
-conda run -n tokenviz npm run tauri -- dev
+conda run --no-capture-output -n tokenviz npm run tauri -- dev
 ```
 
 Automation must request explicit approval before running this GUI smoke. During
 manual review, enter any one or all fixture roots in the Sources view masked inputs and
 click `Refresh`. Expected result: the Manual Refresh panel reports
-`Updated 17,040 aggregate tokens` when all five fixture roots are supplied, Daily and Weekly switch to
+`Updated 9,820 aggregate tokens` when all supported fixture roots are supplied, Daily and Weekly switch to
 `Live local aggregate`, Last Refresh shows only aggregate sync metadata, and no
 fixture root, filename, prompt, response, request body, transcript, tool output,
 or code snippet is displayed. Restarting the app should read the saved aggregate

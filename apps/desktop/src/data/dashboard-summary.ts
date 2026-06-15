@@ -10,17 +10,26 @@ import type {
   TokenTotals
 } from "../types.js";
 
-const dashboardSourceKinds: SourceKind[] = [
+const supportedDashboardSourceKinds: SourceKind[] = [
   "codex",
   "claude_code",
-  "cursor",
   "gemini_cli",
-  "github_copilot",
   "openai_api_cost",
   "claude_api_cost",
   "gemini_api_cost",
   "deepseek_api_cost"
 ];
+const completeSourceKinds: SourceKind[] = [
+  ...supportedDashboardSourceKinds,
+  "cursor",
+  "github_copilot"
+];
+const supportedDashboardSourceKindSet = new Set<SourceKind>(supportedDashboardSourceKinds);
+const localDashboardSourceKindSet = new Set<SourceKind>([
+  "codex",
+  "claude_code",
+  "gemini_cli"
+]);
 
 const apiCostSourceKinds = new Set<SourceKind>([
   "openai_api_cost",
@@ -48,7 +57,7 @@ export type SourceUsageProgress =
       percent: number;
     };
 
-export type DashboardDataMode = "mock" | "local_refresh";
+export type DashboardDataMode = "empty" | "mock" | "local_refresh";
 export type StartupStorageReadState =
   | { phase: "idle" }
   | { phase: "loading" }
@@ -65,16 +74,69 @@ const refreshStaleAfterMinutes = 30;
 export function buildDashboardSummaryFromRefresh(
   storageSummary: RefreshStorageSummaryPayload
 ): MockSummaryPayload {
+  const bySource = completeSourceTotals(storageSummary.summary.by_source);
+  const byDaySource = completeDailySourceTotals(storageSummary.summary.by_day_source ?? {});
+  const byDay = completeDailyTotals(storageSummary.summary.by_day, byDaySource);
+  const totals = sumSourceTotals(bySource);
+  const sourceStates = completeSourceStates(storageSummary.source_states);
   return {
     ...storageSummary,
+    refresh_state: completeRefreshState(storageSummary.refresh_state, sourceStates),
     summary: {
       ...storageSummary.summary,
-      by_source: completeSourceTotals(storageSummary.summary.by_source),
-      by_day_source: completeDailySourceTotals(storageSummary.summary.by_day_source ?? {})
+      totals,
+      by_source: bySource,
+      by_day: byDay,
+      by_day_source: byDaySource,
+      rolling_7d: {
+        ...storageSummary.summary.rolling_7d,
+        totals
+      }
     },
     cost_summary: completeCostSummary(storageSummary.cost_summary),
-    source_states: completeSourceStates(storageSummary.source_states)
+    source_states: sourceStates
   };
+}
+
+export function emptyDashboardSummaryPayload(): MockSummaryPayload {
+  return buildDashboardSummaryFromRefresh({
+    schema_version: 1,
+    generated_from: "desktop.empty_state",
+    privacy: {
+      synthetic: false,
+      stores_prompt_content: false,
+      stores_response_content: false,
+      stores_tool_output: false
+    },
+    refresh_state: {
+      last_attempt_at: null,
+      last_success_at: null,
+      last_status: "never_refreshed",
+      successful_source_count: 0,
+      attempted_source_count: 0,
+      events_seen: 0
+    },
+    summary: {
+      event_count: 0,
+      totals: emptyTokenTotals(),
+      by_source: {},
+      by_day: {},
+      by_day_source: {},
+      rolling_7d: {
+        window_start: null,
+        window_end: null,
+        totals: emptyTokenTotals()
+      }
+    },
+    cost_summary: {
+      window_start: null,
+      window_end: null,
+      total_usd: null,
+      by_source: {}
+    },
+    allowance_windows: [],
+    source_states: []
+  });
 }
 
 export function emptyTokenTotals(): TokenTotals {
@@ -105,10 +167,11 @@ export function sourceUsageRows(
 
   const visibleEntries = Object.entries(totals)
     .filter(([sourceKind, tokenTotals]) => {
-      if (apiCostSourceKinds.has(sourceKind as SourceKind)) {
+      const typedSourceKind = sourceKind as SourceKind;
+      if (!supportedDashboardSourceKindSet.has(typedSourceKind) || apiCostSourceKinds.has(typedSourceKind)) {
         return false;
       }
-      return tokenTotals.total_tokens > 0 || configuredKinds.has(sourceKind as SourceKind);
+      return tokenTotals.total_tokens > 0 || configuredKinds.has(typedSourceKind);
     });
   const visibleTotal = visibleEntries.reduce((total, [, tokenTotals]) => total + tokenTotals.total_tokens, 0);
 
@@ -144,6 +207,9 @@ export function dashboardQualityLabel(dataMode: DashboardDataMode, startupState:
   }
   if (startupState.phase === "loading") {
     return "Loading saved aggregate";
+  }
+  if (dataMode === "empty") {
+    return "No local aggregate";
   }
   return "Mock data";
 }
@@ -214,11 +280,23 @@ function completeSourceTotals(
   bySource: Partial<Record<SourceKind, TokenTotals>>
 ): Record<SourceKind, TokenTotals> {
   return Object.fromEntries(
-    dashboardSourceKinds.map((sourceKind) => {
-      const totals = bySource[sourceKind];
+    completeSourceKinds.map((sourceKind) => {
+      const totals = supportedDashboardSourceKindSet.has(sourceKind) ? bySource[sourceKind] : undefined;
       return [sourceKind, totals ? { ...totals } : emptyTokenTotals()];
     })
   ) as Record<SourceKind, TokenTotals>;
+}
+
+function completeDailyTotals(
+  byDay: Record<string, TokenTotals>,
+  byDaySource: Record<string, Record<SourceKind, TokenTotals>>
+) {
+  return Object.fromEntries(
+    Object.entries(byDay).map(([day, totals]) => [
+      day,
+      byDaySource[day] ? sumSourceTotals(byDaySource[day]) : { ...totals }
+    ])
+  );
 }
 
 function completeDailySourceTotals(
@@ -226,6 +304,19 @@ function completeDailySourceTotals(
 ): Record<string, Record<SourceKind, TokenTotals>> {
   return Object.fromEntries(
     Object.entries(byDaySource).map(([day, bySource]) => [day, completeSourceTotals(bySource)])
+  );
+}
+
+function sumSourceTotals(bySource: Record<SourceKind, TokenTotals>): TokenTotals {
+  return Object.values(bySource).reduce(
+    (total, sourceTotals) => ({
+      input_tokens: total.input_tokens + sourceTotals.input_tokens,
+      output_tokens: total.output_tokens + sourceTotals.output_tokens,
+      cached_input_tokens: total.cached_input_tokens + sourceTotals.cached_input_tokens,
+      reasoning_output_tokens: total.reasoning_output_tokens + sourceTotals.reasoning_output_tokens,
+      total_tokens: total.total_tokens + sourceTotals.total_tokens
+    }),
+    emptyTokenTotals()
   );
 }
 
@@ -250,7 +341,22 @@ function completeCostSummary(costSummary: CostSummary | undefined): CostSummary 
 
 function completeSourceStates(sourceStates: SourceState[]): SourceState[] {
   const byKind = new Map(sourceStates.map((sourceState) => [sourceState.source_kind, sourceState]));
-  return dashboardSourceKinds.map((sourceKind) => byKind.get(sourceKind) ?? fallbackSourceState(sourceKind));
+  return supportedDashboardSourceKinds.map((sourceKind) => byKind.get(sourceKind) ?? fallbackSourceState(sourceKind));
+}
+
+function completeRefreshState(refreshState: RefreshState, sourceStates: readonly SourceState[]): RefreshState {
+  const localSourceStates = sourceStates.filter((sourceState) =>
+    localDashboardSourceKindSet.has(sourceState.source_kind)
+  );
+  const successfulSourceCount = localSourceStates.filter((sourceState) => sourceState.status === "ready").length;
+  const attemptedSourceCount = localSourceStates.filter((sourceState) =>
+    sourceState.status !== "setup_required" && sourceState.status !== "not_found"
+  ).length;
+  return {
+    ...refreshState,
+    successful_source_count: successfulSourceCount,
+    attempted_source_count: attemptedSourceCount
+  };
 }
 
 function fallbackSourceState(sourceKind: SourceKind): SourceState {
@@ -269,7 +375,7 @@ function fallbackSourceState(sourceKind: SourceKind): SourceState {
 }
 
 function sourceOrder(sourceKind: SourceKind) {
-  return dashboardSourceKinds.indexOf(sourceKind);
+  return supportedDashboardSourceKinds.indexOf(sourceKind);
 }
 
 function sourceUsageProgress(
