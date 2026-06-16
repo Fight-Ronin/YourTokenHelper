@@ -1,8 +1,8 @@
 """Explicit source discovery for aggregate JSONL adapters.
 
 Discovery here is intentionally opt-in: callers must provide the roots to
-inspect. Default user-home probing stays in experiments until it is safe enough
-to graduate.
+inspect. Default user-home probing stays out of the production backend until it
+is safe enough to graduate.
 """
 
 from __future__ import annotations

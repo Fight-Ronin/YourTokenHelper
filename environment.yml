@@ -6,4 +6,3 @@ dependencies:
   - nodejs=22
   - pip
   - pyinstaller
-  - pytest

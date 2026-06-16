@@ -86,7 +86,7 @@
     "window_end": "2026-06-14",
     "window_start": "2026-06-08"
   },
-  "generated_from": "backend.fixtures.mock_summary",
+  "generated_from": "desktop.mock_v1_summary",
   "privacy": {
     "stores_prompt_content": false,
     "stores_response_content": false,
